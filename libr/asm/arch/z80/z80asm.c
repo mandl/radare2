@@ -24,6 +24,7 @@
 #define R_API_I
 #endif
 #include "z80asm.h"
+#include <r_util.h>
 
 /* hack */
 // must remove: equ, include, incbin, macro
@@ -203,10 +204,10 @@ static int readcommand (const char **p) {
 }
 
 /* try to read a label and optionally store it in the list */
-static void readlabel (const char **p, int store) {
+static void readlabel(const char **p, int store) {
 	const char *c, *d, *pos, *dummy;
 	int i, j;
-	struct label *buf, *previous, **thefirstlabel = NULL;
+	struct label *buf, *previous;
 	for (d = *p; *d && *d != ';'; ++d);
 	for (c = *p; !strchr (" \r\n\t", *c) && c < d; ++c);
 	pos = strchr (*p, ':');
@@ -228,7 +229,7 @@ static void readlabel (const char **p, int store) {
 		*p = c;
 		return;
 	}
-	if (NULL == (buf = malloc (sizeof (struct label) + c - *p))) {
+	if (! (buf = malloc (sizeof (struct label) + c - *p))) {
 		eprintf ("not enough memory to store label %s\n", *p);
 		*p = c;
 		return;
@@ -238,18 +239,21 @@ static void readlabel (const char **p, int store) {
 	*p = c;
 	buf->value = addr;
 	//lastlabel = buf;
-	if (previous)
+	if (previous) {
 		buf->next = previous->next;
-	else buf->next = *thefirstlabel;
+	} else {
+		buf->next = NULL;
+	}
 	buf->prev = previous;
 	buf->valid = 1;
 	buf->busy = 0;
 	buf->ref = NULL;
-	if (buf->prev)
+	if (buf->prev) {
 		buf->prev->next = buf;
-	else *thefirstlabel = buf;
-	if (buf->next)
+	} 
+	if (buf->next) {
 		buf->next->prev = buf;
+	}
 }
 
 static int compute_ref (struct reference *ref, int allow_invalid) {
@@ -1367,7 +1371,7 @@ static int assemble (const char *str, unsigned char *_obuf) {
 }
 
 // XXX
-R_API_I inline int z80asm (unsigned char *outbuf, const char *s) {
+R_API_I int z80asm (unsigned char *outbuf, const char *s) {
 	return assemble (s, outbuf);
 }
 

@@ -3,6 +3,10 @@
 #ifndef R2_CORE_H
 #define R2_CORE_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "r_types.h"
 #include "r_magic.h"
 #include "r_io.h"
@@ -20,7 +24,7 @@
 #include "r_search.h"
 #include "r_sign.h"
 #include "r_debug.h"
-#include "r_flags.h"
+#include "r_flag.h"
 #include "r_config.h"
 #include "r_bin.h"
 #include "r_hash.h"
@@ -28,10 +32,6 @@
 #include "r_util.h"
 #include "r_crypto.h"
 #include "r_bind.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 R_LIB_VERSION_HEADER(r_core);
 
@@ -151,7 +151,6 @@ typedef struct r_core_t {
 	// visual
 	int http_up;
 	int printidx;
-	int utf8;
 	int vseek;
 	bool in_search;
 	RList *watchers;
@@ -184,6 +183,7 @@ typedef int (*RCoreSearchCallback)(RCore *core, ut64 from, ut8 *buf, int len);
 
 #ifdef R_API
 //#define r_core_ncast(x) (RCore*)(size_t)(x)
+R_API RList *r_core_list_themes (RCore *core);
 R_API RCons *r_core_get_cons (RCore *core);
 R_API RBin *r_core_get_bin (RCore *core);
 R_API RConfig *r_core_get_config (RCore *core);
@@ -293,8 +293,8 @@ R_API ut32 r_core_file_cur_fd (RCore *core);
 R_API void r_core_debug_rr (RCore *core, RReg *reg);
 
 /* project */
-R_API void r_core_project_load(RCore *core, const char *prjfile);
-R_API bool r_core_project_load_xrefs(RCore *core, const char *prjfile);
+R_API bool r_core_project_load(RCore *core, const char *prjfile, const char *rcfile);
+R_API RThread *r_core_project_load_bg(RCore *core, const char *prjfile, const char *rcfile);
 
 #define R_CORE_FOREIGN_ADDR -1
 R_API int r_core_yank(RCore *core, ut64 addr, int len);
@@ -341,7 +341,7 @@ R_API void r_core_anal_fcn_merge (RCore *core, ut64 addr, ut64 addr2);
 R_API const char *r_core_anal_optype_colorfor(RCore *core, ut64 addr);
 R_API ut64 r_core_anal_address (RCore *core, ut64 addr);
 R_API void r_core_anal_undefine (RCore *core, ut64 off);
-R_API void r_core_anal_hint_print (RAnal* a, ut64 addr);
+R_API void r_core_anal_hint_print (RAnal* a, ut64 addr, int mode);
 R_API void r_core_anal_hint_list (RAnal *a, int mode);
 R_API int r_core_anal_search(RCore *core, ut64 from, ut64 to, ut64 ref);
 R_API int r_core_anal_search_xrefs(RCore *core, ut64 from, ut64 to, int rad);
@@ -365,10 +365,10 @@ R_API RList* r_core_anal_graph_to(RCore *core, ut64 addr, int n);
 R_API int r_core_anal_ref_list(RCore *core, int rad);
 R_API int r_core_anal_all(RCore *core);
 R_API RList* r_core_anal_cycles (RCore *core, int ccl);
-R_API void r_core_anal_hint_print (RAnal* a, ut64 addr);
 
 /*tp.c*/
-R_API void r_anal_type_match(RCore *core, RAnalFunction *fcn);
+R_API void r_core_anal_type_match(RCore *core, RAnalFunction *fcn);
+
 /* asm.c */
 typedef struct r_core_asm_hit {
 	char *code;
@@ -401,10 +401,11 @@ R_API int r_core_bin_set_by_fd (RCore *core, ut64 bin_fd);
 R_API int r_core_bin_set_by_name (RCore *core, const char *name);
 R_API int r_core_bin_reload(RCore *core, const char *file, ut64 baseaddr);
 R_API int r_core_bin_load(RCore *core, const char *file, ut64 baseaddr);
+R_API void r_core_bin_export_info_rad(RCore *core);
 R_API int r_core_hash_load(RCore *core, const char *file);
 R_API int r_core_bin_list(RCore *core, int mode);
 R_API int r_core_bin_raise (RCore *core, ut32 binfile_idx, ut32 obj_idx);
-R_API int r_core_bin_delete (RCore *core, ut32 binfile_idx, ut32 binobj_idx);
+R_API bool r_core_bin_delete (RCore *core, ut32 binfile_idx, ut32 binobj_idx);
 
 // XXX - this is kinda hacky, maybe there should be a way to
 // refresh the bin environment without specific calls?
@@ -415,7 +416,7 @@ R_API int r_core_pseudo_code (RCore *core, const char *input);
 R_API int r_core_gdiff(RCore *core1, RCore *core2);
 R_API int r_core_gdiff_fcn(RCore *c, ut64 addr, ut64 addr2);
 
-R_API int r_core_project_open(RCore *core, const char *file);
+R_API int r_core_project_open(RCore *core, const char *file, bool thready);
 R_API int r_core_project_cat(RCore *core, const char *name);
 R_API int r_core_project_delete(RCore *core, const char *prjfile);
 R_API int r_core_project_list(RCore *core, int mode);
@@ -456,6 +457,8 @@ R_API void fcn_callconv (RCore *core, RAnalFunction *fcn);
 #define R_CORE_BIN_ACC_EXPORTS  0x8000
 #define R_CORE_BIN_ACC_VERSIONINFO 0x10000
 #define R_CORE_BIN_ACC_SIGNATURE 0x20000
+#define R_CORE_BIN_ACC_RAW_STRINGS	0x40000
+#define R_CORE_BIN_ACC_HEADER 0x80000
 #define R_CORE_BIN_ACC_ALL	0x4FFF
 
 #define R_CORE_PRJ_FLAGS	0x0001
@@ -515,6 +518,7 @@ R_API void r_core_hack_help(const RCore *core);
 R_API int r_core_hack(RCore *core, const char *op);
 R_API int r_core_dump(RCore *core, const char *file, ut64 addr, ut64 size, int append);
 R_API void r_core_diff_show(RCore *core, RCore *core2);
+R_API void r_core_clippy(const char *msg);
 
 /* watchers */
 R_API void r_core_cmpwatch_free (RCoreCmpWatcher *w);
@@ -546,6 +550,7 @@ typedef struct {
 	ut32 symbols;
 	ut32 strings;
 	ut32 imports;
+	ut32 rwx;
 } RCoreAnalStatsItem;
 typedef struct {
 	RCoreAnalStatsItem *block;

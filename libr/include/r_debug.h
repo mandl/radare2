@@ -10,7 +10,6 @@
 #include <r_db.h>
 #include <r_io.h>
 #include <r_syscall.h>
-#include "list.h"
 
 #include <r_config.h>
 #include "r_bind.h"
@@ -206,9 +205,11 @@ typedef struct r_debug_t {
 	int stop_all_threads; /* stop all threads at any stop */
 	int trace_forks; /* stop on new children */
 	int trace_execs; /* stop on new execs */
+	int trace_aftersyscall; /* stop after the syscall (before if disabled) */
 	int trace_clone; /* stop on new threads */
 	char *glob_libs; /* stop on lib load */
 	char *glob_unlibs; /* stop on lib unload */
+	bool consbreak; /* SIGINT handle for attached processes */
 
 	/* tracking debugger state */
 	int steps; /* counter of steps done */
@@ -230,7 +231,7 @@ typedef struct r_debug_t {
 	RIOBind iob;
 
 	struct r_debug_plugin_t *h;
-	struct list_head plugins;
+	RList *plugins;
 
 	RAnal *anal;
 	RList *maps; // <RDebugMap>
@@ -265,6 +266,7 @@ typedef struct r_debug_info_t {
 	int status; // zombie, running, sleeping, ...
 	int signum;
 	void * lib;
+	void * thread;
 	// retrieve mem/fd/core limits?
 	// list of threads ? hasthreads? counter?
 	// environment?
@@ -289,9 +291,9 @@ typedef struct r_debug_plugin_t {
 	int (*detach)(RDebug *dbg, int pid);
 	int (*select)(int pid, int tid);
 	RList *(*threads)(RDebug *dbg, int pid);
-	RList *(*pids)(int pid);
-	RList *(*tids)(int pid);
-	RFList (*backtrace)(int count);
+	RList *(*pids)(RDebug *dbg, int pid);
+	RList *(*tids)(RDebug *dbg, int pid);
+	RFList (*backtrace)(RDebug *dbg, int count);
 	/* flow */
 	int (*stop)(RDebug *dbg);
 	int (*step)(RDebug *dbg);
@@ -318,7 +320,6 @@ typedef struct r_debug_plugin_t {
 	int (*drx)(RDebug *dbg, int n, ut64 addr, int size, int rwx, int g);
 	RDebugDescPlugin desc;
 	// TODO: use RList here
-	struct list_head list;
 } RDebugPlugin;
 
 // TODO: rename to r_debug_process_t ? maybe a thread too ?
@@ -397,7 +398,7 @@ R_API int r_debug_kill_setup(RDebug *dbg, int sig, int action);
 /* handle.c */
 R_API void r_debug_plugin_init(RDebug *dbg);
 R_API int r_debug_plugin_set(RDebug *dbg, const char *str);
-R_API int r_debug_plugin_list(RDebug *dbg);
+R_API int r_debug_plugin_list(RDebug *dbg, int mode);
 R_API bool r_debug_plugin_add(RDebug *dbg, RDebugPlugin *foo);
 
 /* memory */
@@ -427,7 +428,7 @@ R_API int r_debug_reg_sync(RDebug *dbg, int type, int write);
 R_API int r_debug_reg_list(RDebug *dbg, int type, int size, int rad, const char *use_color);
 R_API int r_debug_reg_set(RDebug *dbg, const char *name, ut64 num);
 R_API ut64 r_debug_reg_get(RDebug *dbg, const char *name);
-R_API ut64 r_debug_reg_get_err(RDebug *dbg, const char *name, int *err);
+R_API ut64 r_debug_reg_get_err(RDebug *dbg, const char *name, int *err, utX *value);
 
 R_API void r_debug_io_bind(RDebug *dbg, RIO *io);
 R_API ut64 r_debug_execute(RDebug *dbg, const ut8 *buf, int len, int restore);
@@ -495,6 +496,7 @@ extern RDebugPlugin r_debug_plugin_esil;
 extern RDebugPlugin r_debug_plugin_rap;
 extern RDebugPlugin r_debug_plugin_gdb;
 extern RDebugPlugin r_debug_plugin_bf;
+extern RDebugPlugin r_debug_plugin_io;
 extern RDebugPlugin r_debug_plugin_wind;
 extern RDebugPlugin r_debug_plugin_bochs;
 extern RDebugPlugin r_debug_plugin_qnx;

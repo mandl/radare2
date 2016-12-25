@@ -15,8 +15,9 @@
 
 static int disassemble(RAsm *a, RAsmOp *op, const ut8 *buf, int len) {
 	int ret = op->size = avrdis (op->buf_asm, a->pc, buf, len);
-	if (op->buf_asm[0] == '.')
+	if (op->buf_asm[0] == '.') {
 		op->buf_asm[0] = 0;
+	}
 	return ret;
 }
 
@@ -416,7 +417,15 @@ RAsmPlugin r_asm_plugin_avr = {
 	.endian = R_SYS_ENDIAN_LITTLE | R_SYS_ENDIAN_BIG,
 	.desc = "AVR Atmel",
 	.disassemble = &disassemble,
-	.assemble = &assemble
+	.assemble = &assemble,
+	.cpus = 
+		"ATmega8,"
+		"ATmega168,"
+		"ATmega328p,"
+		"ATmega32u4,"
+	        "ATmega1280,"
+	        "ATmega2560,"
+		"ATmega48"
 };
 
 #ifndef CORELIB

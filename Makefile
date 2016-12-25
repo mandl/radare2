@@ -1,7 +1,7 @@
 -include config-user.mk
 include global.mk
 
-PREVIOUS_RELEASE=0.10.4
+PREVIOUS_RELEASE=1.0.2
 
 R2R=radare2-regressions
 R2R_URL=$(shell doc/repo REGRESSIONS)
@@ -54,7 +54,11 @@ all: plugins.cfg libr/include/r_version.h
 .PHONY: libr/include/r_version.h
 GIT_TAP=$(shell git describe --tags --match "[0-9]*" 2>/dev/null || echo $(VERSION))
 GIT_TIP=$(shell git rev-parse HEAD 2>/dev/null || echo HEAD)
+ifndef SOURCE_DATE_EPOCH
 GIT_NOW=$(shell date +%Y-%m-%d)
+else
+GIT_NOW=$(shell date --utc --date="@$$SOURCE_DATE_EPOCH" +%Y-%m-%d)
+endif
 
 libr/include/r_version.h:
 	@echo Generating r_version.h file
@@ -197,9 +201,9 @@ install love: install-doc install-man install-www
 		rm -f last ; ln -fs $(VERSION) last
 	cd "$(DESTDIR)$(DATADIR)/radare2/" ;\
 		rm -f last ; ln -fs $(VERSION) last
-	rm -rf "${DESTDIR}${LIBDIR}/radare2/${VERSION}/hud"
-	mkdir -p "${DESTDIR}${LIBDIR}/radare2/${VERSION}/hud"
-	cp -f doc/hud "${DESTDIR}${LIBDIR}/radare2/${VERSION}/hud/main"
+	rm -rf "${DESTDIR}${DATADIR}/radare2/${VERSION}/hud"
+	mkdir -p "${DESTDIR}${DATADIR}/radare2/${VERSION}/hud"
+	cp -f doc/hud "${DESTDIR}${DATADIR}/radare2/${VERSION}/hud/main"
 	mkdir -p "${DESTDIR}${DATADIR}/radare2/${VERSION}/"
 	sys/ldconfig.sh
 	./configure-plugins --rm-static $(DESTDIR)/$(LIBDIR)/radare2/last/
@@ -238,12 +242,12 @@ symstall install-symlink: install-man-symlink install-doc-symlink install-pkgcon
 		echo "$$DIR" ; \
 		${MAKE} install-symlink ); \
 	done
-	mkdir -p "${DESTDIR}${LIBDIR}/radare2/${VERSION}/hud"
+	mkdir -p "${DESTDIR}${DATADIR}/radare2/${VERSION}/hud"
 	cd "$(DESTDIR)$(LIBDIR)/radare2/" ;\
 		rm -f last ; ln -fs $(VERSION) last
 	cd "$(DESTDIR)$(DATADIR)/radare2/" ;\
 		rm -f last ; ln -fs $(VERSION) last
-	ln -fs "${PWD}/doc/hud" "${DESTDIR}${LIBDIR}/radare2/${VERSION}/hud/main"
+	ln -fs "${PWD}/doc/hud" "${DESTDIR}${DATADIR}/radare2/${VERSION}/hud/main"
 	mkdir -p "${DESTDIR}${DATADIR}/radare2/${VERSION}/"
 	sys/ldconfig.sh
 	./configure-plugins --rm-static $(DESTDIR)/$(LIBDIR)/radare2/last/

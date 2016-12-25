@@ -2,7 +2,6 @@
 
 #include <r_reg.h>
 #include <r_util.h>
-#include <list.h>
 
 R_LIB_VERSION (r_reg);
 
@@ -85,8 +84,10 @@ R_API int r_reg_get_name_idx(const char *type) {
 	case 'A' + ('3' << 8): return R_REG_NAME_A3;
 	case 'A' + ('4' << 8): return R_REG_NAME_A4;
 	case 'A' + ('5' << 8): return R_REG_NAME_A5;
-	case 'A' + ('6' << 8):
-		return R_REG_NAME_A6;
+	case 'A' + ('6' << 8): return R_REG_NAME_A6;
+	case 'A' + ('7' << 8): return R_REG_NAME_A7;
+	case 'A' + ('8' << 8): return R_REG_NAME_A8;
+	case 'A' + ('9' << 8): return R_REG_NAME_A9;
 	/* return values */
 	case 'R' + ('0' << 8): return R_REG_NAME_R0;
 	case 'R' + ('1' << 8): return R_REG_NAME_R1;
@@ -112,9 +113,12 @@ R_API const char *r_reg_get_name(RReg *reg, int role) {
 }
 
 static const char *roles[R_REG_NAME_LAST + 1] = {
-	"PC", "SP", "SR", "BP", "Ao", "A1",
-	"A2", "A3", "A4", "A5", "A6", "ZF",
-	"SF", "CF", "OF", "SB", NULL
+	"PC", "SP", "SR", "BP", "LR",
+	"A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9",
+	"R0", "R1", "R2", "R3",
+	"ZF", "SF", "CF", "OF",
+	"SN",
+	NULL
 };
 
 R_API const char *r_reg_get_role(int role) {
@@ -200,6 +204,7 @@ R_API void r_reg_free(RReg *reg) {
 		r_list_free (reg->regset[i].pool);
 		reg->regset[i].pool = NULL;
 	}
+	r_list_free (reg->allregs);
 	r_reg_free_internal (reg, false);
 	free (reg);
 }
@@ -219,6 +224,8 @@ R_API RReg *r_reg_new() {
 		}
 		reg->regset[i].pool = r_list_newf ((RListFree)r_reg_arena_free);
 		reg->regset[i].regs = r_list_newf ((RListFree)r_reg_item_free);
+		// 'reg->regset[i].poll->tail->data' should point to the current 'arena'
+		r_list_push (reg->regset[i].pool, arena);
 		reg->regset[i].arena = arena;
 	}
 	r_reg_arena_push (reg);

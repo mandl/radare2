@@ -55,9 +55,16 @@ typedef struct r_cons_grep_t {
 	int nstrings;
 	char *str;
 	int counter;
+	bool charCounter;
 	int less;
 	int json;
+	int range_line;
 	int line;
+	int sort;
+	int sort_row;
+	bool sort_invert;
+	int f_line; //first line
+	int l_line; //last line
 	int tokens[R_CONS_GREP_TOKENS];
 	int tokens_used;
 	int amp;
@@ -154,6 +161,43 @@ typedef struct r_cons_canvas_t {
 	int linemode; // 0 = diagonal , 1 = square
 } RConsCanvas;
 
+#define RUNECODE_MIN 0xc8 // 200
+#define RUNECODE_LINE_VERT 0xc8
+#define RUNECODE_LINE_CROSS 0xc9
+#define RUNECODE_CORNER_BR 0xca
+#define RUNECODE_CORNER_BL 0xcb
+#define RUNECODE_ARROW_RIGHT 0xcc
+#define RUNECODE_ARROW_LEFT 0xcd
+#define RUNECODE_LINE_HORIZ 0xce
+#define RUNECODE_CORNER_TL 0xcf
+#define RUNECODE_CORNER_TR 0xd0
+#define RUNECODE_LINE_UP 0xd1
+#define RUNECODE_MAX 0xd2
+
+#define RUNECODESTR_MIN 0xc8 // 200
+#define RUNECODESTR_LINE_VERT "\xc8"
+#define RUNECODESTR_LINE_CROSS "\xc9"
+#define RUNECODESTR_CORNER_BR "\xca"
+#define RUNECODESTR_CORNER_BL "\xcb"
+#define RUNECODESTR_ARROW_RIGHT "\xcc"
+#define RUNECODESTR_ARROW_LEFT "\xcd"
+#define RUNECODESTR_LINE_HORIZ "\xce"
+#define RUNECODESTR_CORNER_TL "\xcf"
+#define RUNECODESTR_CORNER_TR "\xd0"
+#define RUNECODESTR_LINE_UP "\xd1"
+#define RUNECODESTR_MAX 0xd1
+
+#define RUNE_LINE_VERT "│"
+#define RUNE_LINE_CROSS "┼" /* ├ */
+#define RUNE_LINE_HORIZ "─"
+#define RUNE_LINE_UP "↑"
+#define RUNE_CORNER_BR "┘"
+#define RUNE_CORNER_BL "└"
+#define RUNE_CORNER_TL "┌"
+#define RUNE_CORNER_TR "┐"
+#define RUNE_ARROW_RIGHT ">"
+#define RUNE_ARROW_LEFT "<"
+
 typedef char *(*RConsEditorCallback)(void *core, const char *file, const char *str);
 typedef int (*RConsClickCallback)(void *core, int x, int y);
 
@@ -165,6 +209,8 @@ r_cons_click_clear();
 
 typedef struct r_cons_t {
 	RConsGrep grep;
+	RStack *cons_stack;
+	RStack *break_stack;
 	char *buffer;
 	//int line;
 	int buffer_len;
@@ -219,6 +265,13 @@ typedef struct r_cons_t {
 #if __WINDOWS__ && !__CYGWIN__
 	bool ansicon;
 #endif
+	bool flush;
+	bool use_utf8; // use utf8 features
+	int linesleep;
+	int pagesize;
+	char *break_word;
+	int break_word_len;
+	ut64 timeout;
 } RCons;
 
 // XXX THIS MUST BE A SINGLETON AND WRAPPED INTO RCons */
@@ -325,17 +378,30 @@ typedef struct r_cons_canvas_line_style_t {
 } RCanvasLineStyle;
 
 // UTF-8 symbols indexes
-
+// XXX. merge with RUNE/RUNECODE/RUNECODESTR
+#if 0
 #define LINE_VERT 0
 #define LINE_CROSS 1
-#define RUP_CORNER 2
-#define RDWN_CORNER 3
-#define ARROW_RIGHT 4
-#define ARROW_LEFT 5
-#define LINE_HORIZ 6
-#define LUP_CORNER 7
-#define LDWN_CORNER 8
-#define LINE_UP 9
+#define LINE_HORIZ 2
+#define LINE_UP 3
+#define CORNER_BR 4
+#define CORNER_BL 5
+#define CORNER_TL 6
+#define CORNER_TR 7
+#define ARROW_RIGHT 8
+#define ARROW_LEFT 9
+#else
+#define LINE_VERT 0
+#define LINE_CROSS 1
+#define LINE_HORIZ 2
+#define LINE_UP 3
+#define CORNER_TL 6
+#define CORNER_BR 4
+#define CORNER_BL 5
+#define CORNER_TR 6
+#define ARROW_RIGHT 8
+#define ARROW_LEFT 9
+#endif
 
 
 #ifdef R_API
@@ -347,7 +413,7 @@ R_API void r_cons_canvas_print_region(RConsCanvas *c);
 R_API char *r_cons_canvas_to_string(RConsCanvas *c);
 R_API void r_cons_canvas_attr(RConsCanvas *c,const char * attr);
 R_API void r_cons_canvas_write(RConsCanvas *c, const char *_s);
-R_API int r_cons_canvas_gotoxy(RConsCanvas *c, int x, int y);
+R_API bool r_cons_canvas_gotoxy(RConsCanvas *c, int x, int y);
 R_API void r_cons_canvas_goto_write(RConsCanvas *c,int x,int y, const char * s);
 R_API void r_cons_canvas_box(RConsCanvas *c, int x, int y, int w, int h, const char *color);
 R_API void r_cons_canvas_line (RConsCanvas *c, int x, int y, int x2, int y2, RCanvasLineStyle *style);
@@ -362,9 +428,10 @@ R_API RCons *r_cons_free (void);
 R_API char *r_cons_lastline (void);
 
 typedef void (*RConsBreak)(void *);
-R_API void r_cons_break(RConsBreak cb, void *user);
 R_API void r_cons_break_end(void);
 R_API bool r_cons_is_breaked();
+R_API void r_cons_break_timeout(int timeout);
+R_API void r_cons_breakword(const char *s);
 
 /* pipe */
 R_API int r_cons_pipe_open(const char *file, int fdn, int append);
@@ -376,6 +443,9 @@ R_API int r_cons_w32_print(const ut8 *ptr, int len, int empty);
 
 R_API void r_cons_push();
 R_API void r_cons_pop();
+R_API void r_cons_break_pop();
+R_API void r_cons_break_push(RConsBreak cb, void*user);
+R_API void r_cons_break_clear();
 
 /* control */
 R_API char *r_cons_editor (const char *file, const char *str);
@@ -472,6 +542,7 @@ R_API char *r_cons_message(const char *msg);
 R_API void r_cons_set_title(const char *str);
 R_API bool r_cons_enable_mouse(const bool enable);
 R_API void r_cons_bind(RConsBind *bind);
+R_API const char* r_cons_get_rune(const ut8 ch);
 #endif
 
 /* r_line */
@@ -564,6 +635,7 @@ typedef struct r_ascii_node_t {
 	int is_dummy;
 	int is_reversed;
 	int klass;
+	bool mini;
 } RANode;
 
 #define R_AGRAPH_MODE_NORMAL 0
@@ -590,8 +662,8 @@ typedef struct r_ascii_graph_t {
 	int movspeed;
 
 	RANode *update_seek_on;
-	int need_reload_nodes;
-	int need_set_layout;
+	bool need_reload_nodes;
+	bool need_set_layout;
 	int need_update_dim;
 	int force_update_seek;
 

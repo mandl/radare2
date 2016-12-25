@@ -20,8 +20,9 @@ R_API RDebugPid *r_debug_pid_free(RDebugPid *pid) {
 }
 
 R_API RList *r_debug_pids(RDebug *dbg, int pid) {
-	if (dbg && dbg->h && dbg->h->pids)
-		return dbg->h->pids (pid);
+	if (dbg && dbg->h && dbg->h->pids) {
+		return dbg->h->pids (dbg, pid);
+	}
 	return NULL;
 }
 
@@ -31,11 +32,13 @@ R_API int r_debug_pid_list(RDebug *dbg, int pid, char fmt) {
 	RListIter *iter;
 	RDebugPid *p;
 	if (dbg && dbg->h && dbg->h->pids) {
-		list = dbg->h->pids (R_MAX (0, pid));
-		if (list == NULL)
+		list = dbg->h->pids (dbg, R_MAX (0, pid));
+		if (!list) {
 			return false;
-		if (fmt == 'j')
+		}
+		if (fmt == 'j') {
 			dbg->cb_printf ("[");
+		}
 		r_list_foreach (list, iter, p) {
 			switch (fmt) {
 			case 'j':
@@ -68,7 +71,7 @@ R_API int r_debug_thread_list(RDebug *dbg, int pid) {
 	}
 	if (dbg && dbg->h && dbg->h->threads) {
 		list = dbg->h->threads (dbg, pid);
-		if (list == NULL) return false;
+		if (!list) return false;
 		if (pid == -'j') {
 			dbg->cb_printf ("[");
 			r_list_foreach (list, iter, p) {

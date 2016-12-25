@@ -36,10 +36,15 @@ static const hash_name_bytes[] = {
 R_API int r_hash_pcprint(const ut8 *buffer, ut64 len) {
 	const ut8 *end = buffer + len;
 	int n;
-	for (n=0; buffer<end; buffer++)
-		if (IS_PRINTABLE (*buffer))
+	if (len < 1) {
+		return 0;
+	}
+	for (n = 0; buffer < end; buffer++) {
+		if (IS_PRINTABLE (*buffer)) {
 			n++;
-	return ((100*n)/len);
+		}
+	}
+	return ((100 * n) / len);
 }
 
 R_API int r_hash_parity(const ut8 *buf, ut64 len) {
@@ -57,8 +62,9 @@ R_API int r_hash_parity(const ut8 *buf, ut64 len) {
 /* fmi: nopcode.org/0xFFFF */
 R_API ut16 r_hash_xorpair(const ut8 *a, ut64 len) {
 	ut16 result = 0, *b = (ut16 *)a;
-	for (len>>=1; len--; b++)
+	for (len >>= 1; len--; b++) {
 		result ^= *b;
+	}
 	return result;
 }
 
@@ -196,8 +202,6 @@ R_API char *r_hash_to_string(RHash *ctx, const char *name, const ut8 *data, int 
 			digest_hex[digest_size * 2] = 0;
 		}
 	}
-	if (myctx) {
-		r_hash_free (myctx);
-	}
+	r_hash_free (myctx);
 	return digest_hex;
 }

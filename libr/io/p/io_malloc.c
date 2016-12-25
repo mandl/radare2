@@ -38,7 +38,7 @@ static int __write(RIO *io, RIODesc *fd, const ut8 *buf, int count) {
 
 static bool __resize(RIO *io, RIODesc *fd, ut64 count) {
 	ut8 * new_buf = NULL;
-	if (fd == NULL || fd->data == NULL || count == 0) {
+	if (!fd || !fd->data || count == 0) {
 		return false;
 	}
 	if (RIOMALLOC_OFF (fd) > RIOMALLOC_SZ (fd)) {
@@ -162,7 +162,7 @@ RIOPlugin r_io_plugin_malloc = {
 };
 
 #ifndef CORELIB
-struct r_lib_struct_t radare_plugin = {
+RLibStruct radare_plugin = {
 	.type = R_LIB_TYPE_IO,
 	.data = &r_io_plugin_malloc,
 	.version = R2_VERSION

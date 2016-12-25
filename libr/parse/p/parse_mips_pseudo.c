@@ -6,17 +6,21 @@
 
 #include <r_lib.h>
 #include <r_util.h>
-#include <r_flags.h>
+#include <r_flag.h>
 #include <r_anal.h>
 #include <r_parse.h>
 
 static int can_replace(const char *str, int idx, int max_operands) {
-	int ret = true;
-	if (str[idx] > '9' || str[idx] < '1') ret = false;
-	if (str[idx + 1] != '\x00' && str[idx + 1] <= '9' && str[idx + 1] >= '1')
-		ret = false;
-	if ((int)((int)str[idx] - 0x30) > max_operands) ret = false;
-	return ret;
+	if (str[idx] > '9' || str[idx] < '1') {
+		return false;
+	}
+	if (str[idx + 1] != '\x00' && str[idx + 1] <= '9' && str[idx + 1] >= '1') {
+		return false;
+	}
+	if ((int)((int)str[idx] - 0x30) > max_operands) {
+		return false;
+	}
+	return true;
 }
 
 static int replace(int argc, const char *argv[], char *newstr) {
@@ -134,7 +138,7 @@ static int parse(RParse *p, const char *data, char *str) {
 	}
 
 	// malloc can be slow here :?
-	if ((buf = malloc (len+1)) == NULL)
+	if (!(buf = malloc (len+1)))
 		return false;
 	memcpy (buf, data, len+1);
 
@@ -149,7 +153,7 @@ static int parse(RParse *p, const char *data, char *str) {
 		w3[0]='\0';
 		w4[0]='\0';
 		ptr = strchr (buf, ' ');
-		if (ptr == NULL)
+		if (!ptr)
 			ptr = strchr (buf, '\t');
 		if (ptr) {
 			*ptr = '\0';

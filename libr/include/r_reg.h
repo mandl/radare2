@@ -3,7 +3,6 @@
 
 #include <r_types.h>
 #include <r_util.h>
-#include <list.h>
 
 R_LIB_VERSION_HEADER (r_reg);
 
@@ -41,6 +40,9 @@ typedef enum {
 	R_REG_NAME_A4,
 	R_REG_NAME_A5,
 	R_REG_NAME_A6,
+	R_REG_NAME_A7,
+	R_REG_NAME_A8,
+	R_REG_NAME_A9,
 	/* retval */
 	R_REG_NAME_R0, // arguments
 	R_REG_NAME_R1,
@@ -86,6 +88,7 @@ typedef struct r_reg_item_t {
 	bool is_float;
 	char *flags;
 	int index;
+	int arena; /* in which arena is this reg living */
 } RRegItem;
 
 typedef struct r_reg_arena_t {
@@ -97,13 +100,14 @@ typedef struct r_reg_set_t {
 	RRegArena *arena;
 	RList *pool; /* RRegArena */
 	RList *regs; /* RRegItem */
+	int maskregstype; /* which type of regs have this reg set (logic mask with RRegisterType  R_REG_TYPE_XXX) */
 } RRegSet;
 
 typedef struct r_reg_t {
 	char *profile;
 	char *reg_profile_cmt;
 	char *reg_profile_str;
-	char *name[R_REG_NAME_LAST];
+	char *name[R_REG_NAME_LAST]; // aliases
 	RRegSet regset[R_REG_TYPE_LAST];
 	RList *allregs;
 	int iters;
@@ -162,6 +166,7 @@ R_API int r_reg_cond(RReg *r, int type);
 /* integer value 8-64 bits */
 R_API ut64 r_reg_get_value(RReg *reg, RRegItem *item);
 R_API bool r_reg_set_value(RReg *reg, RRegItem *item, ut64 value);
+R_API ut64 r_reg_get_value_big(RReg *reg, RRegItem *item, utX *val);
 
 /* float */
 R_API float r_reg_get_float(RReg *reg, RRegItem *item);
@@ -198,8 +203,10 @@ R_API void r_reg_arena_zero(RReg *reg);
 
 R_API ut8 *r_reg_arena_peek(RReg *reg);
 R_API void r_reg_arena_poke(RReg *reg, const ut8 *buf);
+R_API ut8 *r_reg_arena_dup(RReg *reg, const ut8 *source);
 R_API const char *r_reg_cond_to_string(int n);
 R_API int r_reg_cond_from_string(const char *str);
+R_API void r_reg_arena_shrink(RReg *reg);
 #endif
 
 #endif

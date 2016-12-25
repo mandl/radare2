@@ -52,10 +52,12 @@ static thread_t getcurthread (RDebug *dbg) {
 
 static xnu_thread_t* get_xnu_thread(RDebug *dbg, int tid) {
 	RListIter *it = NULL;
-	if (!dbg)
+	if (!dbg) {
 		return NULL;
-	if (tid < 0)
+	}
+	if (tid < 0) {
 		return NULL;
+	}
 	if (!xnu_update_thread_list (dbg)) {
 		eprintf ("Failed to update thread_list xnu_reg_write\n");
 		return NULL;
@@ -63,8 +65,9 @@ static xnu_thread_t* get_xnu_thread(RDebug *dbg, int tid) {
 	//TODO get the current thread
 	it = r_list_find (dbg->threads, (const void *)(size_t)&tid,
 			  (RListComparator)&thread_find);
-	if (it)
+	if (it) {
 		return (xnu_thread_t *)it->data;
+	}
 	tid = getcurthread (dbg);
 	it = r_list_find (dbg->threads, (const void *)(size_t)&tid,
 			  (RListComparator)&thread_find);
@@ -83,13 +86,13 @@ static task_t task_for_pid_workaround(int Pid) {
 	mach_msg_type_number_t numTasks = 0;
 	kern_return_t kr;
 	int i;
-	if (Pid == -1)
+	if (Pid == -1) {
 		return 0;
-
+	}
 	kr = processor_set_default (myhost, &psDefault);
-	if (kr != KERN_SUCCESS)
+	if (kr != KERN_SUCCESS) {
 		return 0;
-
+	}
 	kr = host_processor_set_priv (myhost, psDefault, &psDefault_control);
 	if (kr != KERN_SUCCESS) {
 		eprintf ("host_processor_set_priv failed with error 0x%x\n", kr);
@@ -103,7 +106,6 @@ static task_t task_for_pid_workaround(int Pid) {
 		eprintf ("processor_set_tasks failed with error %x\n", kr);
 		return 0;
 	}
-
 	/* kernel task */
 	if (Pid == 0) {
 		return tasks[0];
@@ -189,8 +191,7 @@ int xnu_detach(RDebug *dbg, int pid) {
 	(void)xnu_restore_exception_ports (pid);
 	kr = mach_port_deallocate (mach_task_self (), task_dbg);
 	if (kr != KERN_SUCCESS) {
-		eprintf ("failed to deallocate port %s-%d\n",
-			__FILE__, __LINE__);
+		eprintf ("xnu_detach: failed to deallocate port\n");
 		return false;
 	}
 	//we mark the task as not longer available since we deallocated the ref
@@ -226,9 +227,13 @@ int xnu_continue(RDebug *dbg, int pid, int tid, int sig) {
 		}
 	}
 	kr = task_resume (task);
+#if 0
+// it fails because the process is in a syscall like read() waiting to finish
+// so it cant resume
 	if (kr != KERN_SUCCESS) {
 		eprintf ("Failed to resume task xnu_continue\n");
 	}
+#endif
 	return true;
 #endif
 }
@@ -479,7 +484,7 @@ task_t pid_to_task (int pid) {
 		//since we are going to get a new task
 		kr = mach_port_deallocate (mach_task_self (), task_dbg);
 		if (kr != KERN_SUCCESS) {
-			eprintf ("fail to deallocate port %s:%d\n", __FILE__, __LINE__);
+			eprintf ("pid_to_task: fail to deallocate port\n");
 			/* ignore on purpose to not break process reload: ood */
 			//return 0;
 		}
@@ -878,7 +883,7 @@ RDebugPid *xnu_get_pid (int pid) {
 #endif
 	/* Allocate space for the arguments. */
 	procargs = (char *)malloc (argmax);
-	if (procargs == NULL) {
+	if (!procargs) {
 		eprintf ("getcmdargs(): insufficient memory for procargs %d\n",
 			(int)(size_t)argmax);
 		return NULL;
@@ -1033,8 +1038,9 @@ vm_address_t get_kernel_base(task_t ___task) {
 		addr += size;
 	}
 	ret = mach_port_deallocate (mach_task_self (), 0);
-	if (ret != KERN_SUCCESS)
-		eprintf ("leaking kernel port %s-%d\n", __FILE__, __LINE__);
+	if (ret != KERN_SUCCESS) {
+		eprintf ("get_kernel_base: leaking kernel port\n");
+	}
 	return (vm_address_t)0;
 }
 
@@ -1263,8 +1269,8 @@ RList *xnu_dbg_maps(RDebug *dbg, int only_modules) {
 			r_list_append (list, mr);
 		}
 		if (size < 1) {
-			eprintf ("EFUCK\n");
-			size = osize; // fuck
+			eprintf ("size error\n");
+			size = osize;
 		}
 		address += size;
 		size = 0;

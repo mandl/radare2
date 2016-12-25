@@ -146,7 +146,8 @@ static int r_io_zip_slurp_file(RIOZipFileObj *zfo) {
 			if (buf) {
 				zip_fread (zFile, buf, sb.size);
 				r_buf_set_bytes (zfo->b, buf, sb.size);
-				res = zfo->opened = true;
+				res = true;
+				zfo->opened = true;
 				free (buf);
 			}
 		}
@@ -226,7 +227,7 @@ RIOZipFileObj *r_io_zip_create_new_file(const char *archivename, const char *fil
 		zfo->b = r_buf_new ();
 		zfo->archivename = strdup (archivename);
 		zfo->name = strdup (sb? sb->name: filename);
-		zfo->entry = sb == NULL ? -1 : sb->index;
+		zfo->entry = !sb ? -1 : sb->index;
 		zfo->fd = r_num_rand (0xFFFF); // XXX: Use r_io_fd api
 		zfo->flags = flags;
 		zfo->mode = mode;

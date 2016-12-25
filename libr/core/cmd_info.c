@@ -11,10 +11,14 @@
 static void pair(const char *a, const char *b) {
 	char ws[16];
 	int al = strlen (a);
-	if (!b) return;
+	if (!b) {
+		return;
+	}
 	memset (ws, ' ', sizeof (ws));
 	al = PAIR_WIDTH - al;
-	if (al<0) al = 0;
+	if (al < 0) {
+		al = 0;
+	}
 	ws[al] = 0;
 	r_cons_printf ("%s%s%s\n", a, ws, b);
 }
@@ -23,7 +27,7 @@ static bool demangle_internal(RCore *core, const char *lang, const char *s) {
 	char *res = NULL;
 	int type = r_bin_demangle_type (lang);
 	switch (type) {
-	case R_BIN_NM_CXX: res = r_bin_demangle_cxx (s); break;
+	case R_BIN_NM_CXX: res = r_bin_demangle_cxx (core->bin->cur, s, 0); break;
 	case R_BIN_NM_JAVA: res = r_bin_demangle_java (s); break;
 	case R_BIN_NM_OBJC: res = r_bin_demangle_objc (NULL, s); break;
 	case R_BIN_NM_SWIFT: res = r_bin_demangle_swift (s, core->bin->demanglercmd); break;
@@ -244,6 +248,9 @@ static int cmd_info(void *data, const char *input) {
 					free (o);
 				}
 				break;
+			case '*':
+				r_core_bin_export_info_rad (core);
+				break;
 			case '.':
 			case ' ':
 				if (db) {
@@ -262,11 +269,12 @@ static int cmd_info(void *data, const char *input) {
 			case '?':
 			default:
 				eprintf ("Usage: ik [sdb-query]\n");
+				eprintf ("Usage: ik*    # load all header information\n");
 			}
 			goto done;
 			break;
 		case 'o':
-			 {
+			{
 				if (!cf) {
 					eprintf ("Core file not open\n");
 					return 0;
@@ -274,11 +282,11 @@ static int cmd_info(void *data, const char *input) {
 				const char *fn = input[1]==' '? input+2: cf->desc->name;
 				ut64 baddr = r_config_get_i (core->config, "bin.baddr");
 				r_core_bin_load (core, fn, baddr);
-			 }
+			}
 			break;
 	#define RBININFO(n,x,y) \
 	if (is_array) { \
-		if (is_array==1) is_array++; else r_cons_printf (","); \
+		if (is_array == 1) is_array++; else r_cons_printf (","); \
 		r_cons_printf ("\"%s\":",n); \
 	}\
 	r_core_bin_info (core, x, mode, va, NULL, y);
@@ -312,10 +320,31 @@ static int cmd_info(void *data, const char *input) {
 				input--;
 			}
 			break;
+		case 'H':
+			if (input[1] == 'H') { //iHH
+				RBININFO ("header", R_CORE_BIN_ACC_HEADER, NULL);
+				break;
+			}
 		case 'h': RBININFO ("fields", R_CORE_BIN_ACC_FIELDS, NULL); break;
 		case 'l': RBININFO ("libs", R_CORE_BIN_ACC_LIBS, NULL); break;
 		case 'L': r_bin_list (core->bin, input[1]=='j'); break;
-		case 's': RBININFO ("symbols", R_CORE_BIN_ACC_SYMBOLS, NULL); break;
+		case 's':
+			if (input[1] == '.') {
+				ut64 addr = core->offset + (core->print->cur_enabled? core->print->cur: 0);
+				RFlagItem *f = r_flag_get_at (core->flags, addr, false);
+				if (f) {
+					if (f->offset == addr || !f->offset) {
+						r_cons_printf ("%s", f->name);
+					} else {
+						r_cons_printf ("%s+%d", f->name, (int)(addr-f->offset));
+					}
+				}
+				input++;
+				break;
+			} else {
+					RBININFO ("symbols", R_CORE_BIN_ACC_SYMBOLS, NULL);
+				break;
+			}
 		case 'R':
 		case 'r': RBININFO ("relocs", R_CORE_BIN_ACC_RELOCS, NULL); break;
 		case 'd': RBININFO ("dwarf", R_CORE_BIN_ACC_DWARF, NULL); break;
@@ -327,83 +356,28 @@ static int cmd_info(void *data, const char *input) {
 		case 'V': RBININFO ("versioninfo", R_CORE_BIN_ACC_VERSIONINFO, NULL); break;
 		case 'C': RBININFO ("signature", R_CORE_BIN_ACC_SIGNATURE, NULL); break;
 		case 'z':
-			if (input[1] == 'z') {
-				char *biname = NULL;
-				char *ret = NULL;
-				int fd = -1;
-				int xtr_idx = 0;
-				int rawstr = 1;
-				RCore *r2core = core;
-				const int min = core->bin->minstrlen;
-				const int max = core->bin->maxstrlen;
-
-#if 0
-				RCons _cons, *cons;
-				cons = r_cons_singleton ();
-				memcpy (&_cons, cons, sizeof (RCons));
-				cons = &_cons;
-#endif
-#if 1
-				RLine _line, *line;
-				line = r_line_singleton ();
-				memcpy (&_line, line, sizeof (RLine));
-				line = &_line;
-#endif
-				/* TODO: reimplement in C to avoid forks */
-				if (!core->file) {
-					eprintf ("Core file not open\n");
-					return 0;
-				}
-				biname = r_str_escape (core->file->desc->name);
-				RCore *tmpcore = r_core_new ();
-				if (!tmpcore) {
-					eprintf ("Cannot create core\n");
-					return 0;
-				}
-				core = tmpcore;
-				tmpcore->bin->minstrlen = min;
-				tmpcore->bin->maxstrlen = max;
-				if (!r_bin_load (tmpcore->bin, biname, UT64_MAX, UT64_MAX, xtr_idx, fd, rawstr)){
-					eprintf ("Cannot load information\n");
-					goto beach;
-				}
+			if (input[1] == 'z') { //izz
 				switch (input[2]) {
 				case '*':
 					mode = R_CORE_BIN_RADARE;
-					RBININFO ("strings", R_CORE_BIN_ACC_STRINGS, NULL);
-					break;
-				case 'q':
-					if (input[3] == 'q') {
-						ret = r_sys_cmd_strf ("rabin2 -N %d:%d -qqzz '%s'", min, max, biname);
-						input++;
-					} else {
-						mode = R_CORE_BIN_SIMPLE;
-						RBININFO ("strings", R_CORE_BIN_ACC_STRINGS, NULL);
-					}
 					break;
 				case 'j':
 					mode = R_CORE_BIN_JSON;
-					RBININFO ("strings", R_CORE_BIN_ACC_STRINGS, NULL);
 					break;
-				default:
-					RBININFO ("strings", R_CORE_BIN_ACC_STRINGS, NULL);
+				case 'q': //izzq
+					if (input[3] == 'q') { //izzqq
+						mode = R_CORE_BIN_SIMPLEST;
+						input++;
+					} else {
+						mode = R_CORE_BIN_SIMPLE;
+					}
+					break;
+				default: 
+					mode = R_CORE_BIN_PRINT;
 					break;
 				}
-				if (ret && *ret) {
-					r_cons_strcat (ret);
-				}
-beach:
-				core = r2core;
-				r_core_free (tmpcore);
-				//how cons is singleton cons->num was referring tmpcore->num that is freed causing UAF
-				core->cons->num = core->num;
-				//memcpy (r_cons_singleton (), cons, sizeof (RCons));
-				/* do not copy rcons because it will segfault later
-				 * because of globals like consbuffersize */
-				memcpy (r_line_singleton (), line, sizeof (RLine));
-				free (ret);
-				free (biname);
 				input++;
+				RBININFO ("strings", R_CORE_BIN_ACC_RAW_STRINGS, NULL);
 			} else {
 			    	if (input[1] == 'q') {
 					mode = (input[2] == 'q')
@@ -499,7 +473,7 @@ beach:
 			break;
 		case '?': {
 			const char * help_message[] = {
-				"Usage: i", "", "Get info from opened file",
+				"Usage: i", "", "Get info from opened file (see rabin2's manpage)",
 				"Output mode:", "", "",
 				"'*'", "", "Output in radare commands",
 				"'j'", "", "Output in json",
@@ -515,7 +489,8 @@ beach:
 				"iD", " lang sym", "demangle symbolname for given language",
 				"ie", "", "Entrypoint",
 				"iE", "", "Exports (global symbols)",
-				"ih", "", "Headers",
+				"ih", "", "Headers (alias for iH)",
+				"iHH", "", "Verbose Headers in raw text",
 				"ii", "", "Imports",
 				"iI", "", "Binary info",
 				"ik", " [query]", "Key-value database from RBinObject",

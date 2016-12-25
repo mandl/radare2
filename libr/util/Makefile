@@ -41,10 +41,11 @@ endif
 endif
 
 EXTRA_PRE+=sdb_version
-#$(SDBLIB)
+EXTRA_PRE+=spp_config
 
 include ../rules.mk
 include sdb.mk
+include spp.mk
 
 sync-regex regex-sync:
 	-rm -rf src/
