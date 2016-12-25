@@ -33,6 +33,7 @@ R_API void r_str_sanitize(char *c);
 R_API const char *r_str_casestr(const char *a, const char *b);
 R_API const char *r_str_lastbut(const char *s, char ch, const char *but);
 R_API int r_str_split(char *str, char ch);
+R_API int *r_str_split_lines(char *str, int *count);
 R_API char* r_str_replace(char *str, const char *key, const char *val, int g);
 R_API char *r_str_replace_in(char *str, ut32 sz, const char *key, const char *val, int g);
 #define r_str_cpy(x,y) memmove(x,y,strlen(y)+1);
@@ -111,6 +112,7 @@ R_API int r_str_utf16_to_utf8(ut8 *dst, int len_dst, const ut8 *src, int len_src
 R_API char *r_str_utf16_encode(const char *s, int len);
 R_API char *r_str_home(const char *str);
 R_API int r_str_nlen(const char *s, int n);
+R_API int r_str_nlen_w(const char *s, int n);
 R_API int r_wstr_clen(const char *s);
 R_API char *r_str_prefix(char *ptr, const char *string);
 R_API char *r_str_prefix_all(char *s, const char *pfx);
@@ -129,5 +131,7 @@ R_API int r_str_binstr2bin(const char *str, ut8 *out, int outlen);
 R_API char *r_str_between(const char *str, const char *prefix, const char *suffix);
 R_API bool r_str_startswith(const char *str, const char *needle);
 R_API bool r_str_endswith(const char *str, const char *needle);
+R_API bool r_str_isnumber (const char *str);
+R_API const char *r_str_last (const char *in, const char *ch);
 
 #endif //  R_STR_H

@@ -73,7 +73,9 @@ R_API int r_core_file_reopen(RCore *core, const char *args, int perm, int loadbi
 	if (file) {
 		bool had_rbin_info = false;
 
-		ofile->map->from = ofrom;
+		if (ofile->map) {
+			ofile->map->from = ofrom;
+		}
 		if (ofile->desc) {
 			if (r_bin_file_delete (core->bin, ofile->desc->fd)) {
 				had_rbin_info = true;
@@ -88,7 +90,7 @@ R_API int r_core_file_reopen(RCore *core, const char *args, int perm, int loadbi
 		odesc = NULL;
 	//	core->file = file;
 		eprintf ("File %s reopened in %s mode\n", path,
-			(perm&R_IO_WRITE)? "read-write": "read-only");
+			(perm & R_IO_WRITE)? "read-write": "read-only");
 
 		if (loadbin && (loadbin == 2 || had_rbin_info)) {
 			ut64 baddr = r_config_get_i (core->config, "bin.baddr");
@@ -109,7 +111,9 @@ R_API int r_core_file_reopen(RCore *core, const char *args, int perm, int loadbi
 		// lower it down back
 		//ofile = r_core_file_open (core, path, R_IO_READ, addr);
 		r_core_file_set_by_file (core, ofile);
-		ofile->map->from = ofrom;
+		if (ofile->map) {
+			ofile->map->from = ofrom;
+		}
 	} else {
 		eprintf ("Cannot reopen\n");
 	}
@@ -283,7 +287,9 @@ R_API int r_core_bin_reload(RCore *r, const char *file, ut64 baseaddr) {
 	RCoreFile *cf = r_core_file_cur (r);
 	RIODesc *desc = cf ? cf->desc : NULL;
 	RBinFile *bf = NULL;
-	if (desc) result = r_bin_reload (r->bin, desc, baseaddr);
+	if (desc) {
+		result = r_bin_reload (r->bin, desc, baseaddr);
+	}
 	bf = r_bin_cur (r->bin);
 	r_core_bin_set_env (r, bf);
 	return result;
@@ -385,17 +391,19 @@ static int r_core_file_do_load_for_debug (RCore *r, ut64 baseaddr, const char *f
 	return true;
 }
 
-static int r_core_file_do_load_for_io_plugin (RCore *r, ut64 baseaddr, ut64 loadaddr) {
+static int r_core_file_do_load_for_io_plugin(RCore *r, ut64 baseaddr, ut64 loadaddr) {
 	RCoreFile *cf = r_core_file_cur (r);
 	RIODesc *desc = cf ? cf->desc : NULL;
 	RBinFile *binfile = NULL;
 	int xtr_idx = 0; // if 0, load all if xtr is used
 	RBinPlugin * plugin;
 
-	if (!desc) return false;
+	if (!desc) {
+		return false;
+	}
 	r_io_use_desc (r->io, desc);
 
-	if ( !r_bin_load_io (r->bin, desc, baseaddr, loadaddr, xtr_idx)) {
+	if (!r_bin_load_io (r->bin, desc, baseaddr, loadaddr, xtr_idx)) {
 		//eprintf ("Failed to load the bin with an IO Plugin.\n");
 		return false;
 	}
@@ -405,10 +413,11 @@ static int r_core_file_do_load_for_io_plugin (RCore *r, ut64 baseaddr, ut64 load
 	if (plugin && !strcmp (plugin->name, "any") ) {
 		RBinObject *obj = r_bin_get_object (r->bin);
 		RBinInfo * info = obj ? obj->info : NULL;
-		if (!info) return false;
+		if (!info) {
+			return false;
+		}
 		// set use of raw strings
-		r_core_bin_set_arch_bits (r, binfile->file,
-					info->arch, info->bits);
+		r_core_bin_set_arch_bits (r, binfile->file, info->arch, info->bits);
 		r_config_set_i (r->config, "io.va", false);
 		// r_config_set (r->config, "bin.rawstr", "true");
 		// get bin.minstr
@@ -417,7 +426,9 @@ static int r_core_file_do_load_for_io_plugin (RCore *r, ut64 baseaddr, ut64 load
 	} else if (binfile) {
 		RBinObject *obj = r_bin_get_object (r->bin);
 		RBinInfo * info = obj ? obj->info : NULL;
-		if (!info) return false;
+		if (!info) {
+			return false;
+		}
 		if (plugin && strcmp (plugin->name, "any") && info) {
 			r_core_bin_set_arch_bits (r, binfile->file,
 				info->arch, info->bits);
@@ -486,7 +497,7 @@ R_API int r_core_bin_load(RCore *r, const char *filenameuri, ut64 baddr) {
 	}
 
 	if (cf) {
-		if ((filenameuri == NULL || !*filenameuri)) {
+		if (!filenameuri || !*filenameuri) {
 			filenameuri = cf->desc->name;
 		} else if (cf->desc->name && strcmp (filenameuri, cf->desc->name)) {
 			// XXX - this needs to be handled appropriately
@@ -511,7 +522,7 @@ R_API int r_core_bin_load(RCore *r, const char *filenameuri, ut64 baddr) {
 		// TODO? necessary to restore the desc back?
 		// RIODesc *oldesc = desc;
 		// Fix to select pid before trying to load the binary
-		if ( (desc->plugin && desc->plugin->isdbg) || r_config_get_i (r->config, "cfg.debug")) {
+		if ((desc->plugin && desc->plugin->isdbg) || r_config_get_i (r->config, "cfg.debug")) {
 			r_core_file_do_load_for_debug (r, baddr, filenameuri);
 		} else {
 			ut64 laddr = r_config_get_i (r->config, "bin.laddr");
@@ -521,8 +532,9 @@ R_API int r_core_bin_load(RCore *r, const char *filenameuri, ut64 baddr) {
 		r_io_use_desc (r->io, desc);
 	}
 
-	if (cf && binfile && desc)
+	if (cf && binfile && desc) {
 		binfile->fd = desc->fd;
+	}
 	binfile = r_bin_cur (r->bin);
 	if (r->bin->cur && r->bin->cur->curplugin && r->bin->cur->curplugin->strfilter) {
 		char msg[2];
@@ -682,7 +694,7 @@ R_API RCoreFile *r_core_file_open_many(RCore *r, const char *file, int flags, ut
 	return top_file;
 }
 
-/* loadaddr is r2 -m (mapaddr */
+/* loadaddr is r2 -m (mapaddr) */
 R_API RCoreFile *r_core_file_open(RCore *r, const char *file, int flags, ut64 loadaddr) {
 	ut64 prev = r_sys_now();
 	const char *suppress_warning = r_config_get (r->config, "file.nowarn");
@@ -700,12 +712,14 @@ R_API RCoreFile *r_core_file_open(RCore *r, const char *file, int flags, ut64 lo
 	}
 	r->io->bits = r->assembler->bits; // TODO: we need an api for this
 	fd = r_io_open_nomap (r->io, file, flags, 0644);
-	if (fd == NULL && openmany > 2) {
+	if (!fd && openmany > 2) {
 		// XXX - make this an actual option somewhere?
 		fh = r_core_file_open_many (r, file, flags, loadaddr);
-		if (fh) goto beach;
+		if (fh) {
+			goto beach;
+		}
 	}
-	if (fd == NULL) {
+	if (!fd) {
 		if (flags & 2) {
 			if (!r_io_create (r->io, file, 0644, 0)) {
 				goto beach;
@@ -718,7 +732,9 @@ R_API RCoreFile *r_core_file_open(RCore *r, const char *file, int flags, ut64 lo
 		}
 	}
 	if (r_io_is_listener (r->io)) {
+		r_io_desc_detach (r->io, fd);
 		r_core_serve (r, fd);
+		r_io_desc_free (fd);
 		goto beach;
 	}
 
@@ -768,14 +784,17 @@ beach:
 }
 
 R_API int r_core_files_free(const RCore *core, RCoreFile *cf) {
-	if (!core || !core->files || !cf) return false;
+	if (!core || !core->files || !cf) {
+		return false;
+	}
 	return r_list_delete_data (core->files, cf);
 }
 
 R_API void r_core_file_free(RCoreFile *cf) {
 	int res = 1;
-	if (!cf || !cf->core)
+	if (!cf || !cf->core) {
 		return;
+	}
 	if (cf) {
 		res = r_core_files_free (cf->core, cf);
 	}
@@ -858,8 +877,9 @@ R_API RCoreFile *r_core_file_get_by_fd(RCore *core, int fd) {
 	RCoreFile *file;
 	RListIter *iter;
 	r_list_foreach (core->files, iter, file) {
-		if (file->desc->fd == fd)
+		if (file->desc->fd == fd) {
 			return file;
+		}
 	}
 	return NULL;
 }
@@ -869,8 +889,9 @@ R_API int r_core_file_list(RCore *core, int mode) {
 	RCoreFile *f;
 	ut64 from;
 	RListIter *iter;
-	if (mode=='j')
+	if (mode == 'j') {
 		r_cons_printf ("[");
+	}
 	r_list_foreach (core->files, iter, f) {
 		if (f->map) {
 			from = f->map->from;
@@ -895,18 +916,29 @@ R_API int r_core_file_list(RCore *core, int mode) {
 			r_cons_printf ("o %s 0x%"PFMT64x"\n", f->desc->uri, (ut64)from);
 			break;
 		default:
-			r_cons_printf ("%c %d %s @ 0x%"PFMT64x" ; %s size=%"PFMT64u" %s\n",
+			{
+			ut64 sz = r_io_desc_size (core->io, f->desc);
+			const char *fmt;
+			if (sz == UT64_MAX) {
+				fmt = "%c %d %d %s @ 0x%"PFMT64x" ; %s size=%"PFMT64d" %s\n";
+			} else {
+				fmt = "%c %d %d %s @ 0x%"PFMT64x" ; %s size=%"PFMT64u" %s\n";
+			}
+			r_cons_printf (fmt,
 					core->io->raised == f->desc->fd?'*':'-',
+					count,
 					(int)f->desc->fd, f->desc->uri, (ut64)from,
 					f->desc->flags & R_IO_WRITE? "rw": "r",
 					r_io_desc_size (core->io, f->desc),
 					overlapped?"overlaps":"");
+			}
 			break;
 		}
 		count++;
 	}
-	if (mode=='j')
+	if (mode=='j') {
 		r_cons_printf ("]\n");
+	}
 	return count;
 }
 
@@ -933,8 +965,9 @@ R_API int r_core_file_binlist(RCore *core) {
 	RBin *bin = core->bin;
 	const RList *binfiles = bin ? bin->binfiles: NULL;
 
-	if (!binfiles) return false;
-
+	if (!binfiles) {
+		return false;
+	}
 	r_list_foreach (binfiles, iter, binfile) {
 		int fd = binfile->fd;
 		cf = r_core_file_get_by_fd (core, fd);
@@ -994,7 +1027,7 @@ R_API int r_core_hash_load(RCore *r, const char *file) {
 	ctx = r_hash_new (true, R_HASH_MD5);
 	md5 = r_hash_do_md5 (ctx, buf, buf_len);
 	p = hash;
-	for (i=0; i<R_HASH_SIZE_MD5; i++) {
+	for (i = 0; i < R_HASH_SIZE_MD5; i++) {
 		sprintf (p, "%02x", md5[i]);
 		p += 2;
 	}
@@ -1004,7 +1037,7 @@ R_API int r_core_hash_load(RCore *r, const char *file) {
 	ctx = r_hash_new (true, R_HASH_SHA1);
 	sha1 = r_hash_do_sha1 (ctx, buf, buf_len);
 	p = hash;
-	for (i=0; i<R_HASH_SIZE_SHA1; i++) {
+	for (i = 0; i < R_HASH_SIZE_SHA1; i++) {
 		sprintf (p, "%02x", sha1[i]);
 		p += 2;
 	}
@@ -1018,9 +1051,10 @@ R_API int r_core_hash_load(RCore *r, const char *file) {
 R_API RCoreFile * r_core_file_find_by_fd (RCore *core, ut64 fd) {
 	RListIter *iter;
 	RCoreFile *cf = NULL;
-
 	r_list_foreach (core->files, iter, cf) {
-		if (cf && cf->desc && cf->desc->fd == fd) break;
+		if (cf && cf->desc && cf->desc->fd == fd) {
+			break;
+		}
 		cf = NULL;
 	}
 	return cf;
@@ -1031,7 +1065,9 @@ R_API RCoreFile * r_core_file_find_by_name (RCore * core, const char * name) {
 	RCoreFile *cf = NULL;
 
 	r_list_foreach (core->files, iter, cf) {
-		if (cf && cf->desc && !strcmp (cf->desc->name, name)) break;
+		if (cf && cf->desc && !strcmp (cf->desc->name, name)) {
+			break;
+		}
 		cf = NULL;
 	}
 	return cf;
@@ -1066,7 +1102,7 @@ R_API ut32 r_core_file_cur_fd (RCore *core) {
 	if (desc) {
 		return desc->fd;
 	}
-	return (ut32)-1;		//WTF
+	return UT32_MAX;
 }
 
 R_API RCoreFile * r_core_file_cur (RCore *r) {

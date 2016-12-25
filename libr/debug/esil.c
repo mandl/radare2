@@ -147,7 +147,7 @@ static int exprmatchreg (RDebug *dbg, const char *regname, const char *expr) {
 		ret = 1;
 	} else {
 #define CURVAL 0){}r_str_trim_head_tail (s);if (!strcmp(regname,s) && regval
-		ut64 regval = r_debug_reg_get_err (dbg, regname, NULL);
+		ut64 regval = r_debug_reg_get_err (dbg, regname, NULL, NULL);
 		if (exprtoken (dbg, s, ">=", &p)) {
 			if (CURVAL >= r_num_math (dbg->num, p))
 				ret = 1;
@@ -179,7 +179,7 @@ static int exprmatchreg (RDebug *dbg, const char *regname, const char *expr) {
 	return ret;
 }
 
-static int esilbreak_reg_write(RAnalEsil *esil, const char *regname, ut64 num) {
+static int esilbreak_reg_write(RAnalEsil *esil, const char *regname, ut64 *num) {
 	EsilBreak *ew;
 	RListIter *iter;
 	if (regname[0]>='0' && regname[0]<='9') {
@@ -187,7 +187,7 @@ static int esilbreak_reg_write(RAnalEsil *esil, const char *regname, ut64 num) {
 		//eprintf (Color_BLUE"IMM WRTE %s\n"Color_RESET, regname);
 		return 0;
 	}
-	eprintf (Color_MAGENTA"REG WRTE %s 0x%"PFMT64x"\n"Color_RESET, regname, num);
+	eprintf (Color_MAGENTA"REG WRTE %s 0x%"PFMT64x"\n"Color_RESET, regname, *num);
 	r_list_foreach (EWPS, iter, ew) {
 		if (ew->rwx & R_IO_WRITE && ew->dev == 'r') {
 			// XXX: support array of regs in expr
@@ -268,15 +268,16 @@ R_API int r_debug_esil_stepi (RDebug *d) {
 R_API ut64 r_debug_esil_step(RDebug *dbg, ut32 count) {
 	count++;
 	has_match = 0;
-	r_cons_break (NULL, NULL);
+	r_cons_break_push (NULL, NULL);
 	do {
-		if (r_cons_is_breaked ())
+		if (r_cons_is_breaked ()) {
 			break;
+		}
 		if (has_match) {
 			eprintf ("EsilBreak match at 0x%08"PFMT64x"\n", opc);
 			break;
 		}
-		if (count>0) {
+		if (count > 0) {
 			count--;
 			if (!count) {
 				//eprintf ("Limit reached\n");
@@ -284,7 +285,7 @@ R_API ut64 r_debug_esil_step(RDebug *dbg, ut32 count) {
 			}
 		}
 	} while (r_debug_esil_stepi (dbg));
-	r_cons_break_end ();
+	r_cons_break_pop ();
 	return opc;
 }
 

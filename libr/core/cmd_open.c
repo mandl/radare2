@@ -1,4 +1,5 @@
-/* radare - LGPL - Copyright 2009-2015 - pancake */
+/* radare - LGPL - Copyright 2009-2016 - pancake */
+
 #include "r_list.h"
 #include "r_config.h"
 #include "r_core.h"
@@ -13,7 +14,6 @@ static inline ut32 find_binfile_id_by_fd (RBin *bin, ut32 fd) {
 		if (bf->fd == fd) return bf->id;
 	}
 	return UT32_MAX;
-
 }
 
 static void cmd_open_bin(RCore *core, const char *input) {
@@ -237,6 +237,32 @@ static void cmd_open_map (RCore *core, const char *input) {
 	r_core_block_read (core);
 }
 
+R_API void r_core_file_reopen_in_malloc(RCore *core) {
+	RCoreFile *f;
+	RListIter *iter;
+	r_list_foreach (core->files, iter, f) {
+		ut64 sz = r_io_desc_size (core->io, f->desc);
+		ut8 *buf = calloc (sz, 1);
+		if (!buf) {
+			eprintf ("Cannot allocate %d\n", (int)sz);
+			continue;
+		}
+		(void)r_io_pread (core->io, 0, buf, sz);
+		char *url = r_str_newf ("malloc://%d", (int)sz);
+		RIODesc *desc = r_io_open (core->io, url, R_IO_READ | R_IO_WRITE, 0);
+		if (desc) {
+			r_io_close (core->io, f->desc);
+			f->desc = desc;
+			(void)r_io_write_at (core->io, 0, buf, sz);
+		} else {
+			eprintf ("Cannot open %s\n", url);
+		}
+		free (buf);
+		free (url);
+		break;
+	}
+}
+
 R_API void r_core_file_reopen_debug(RCore *core, const char *args) {
 	RCoreFile *ofile = core->file;
 	RBinFile *bf = NULL;
@@ -248,11 +274,13 @@ R_API void r_core_file_reopen_debug(RCore *core, const char *args) {
 	bf = r_bin_file_find_by_fd (core->bin, ofile->desc->fd);
 	binpath = bf ? strdup (bf->file) : NULL;
 	if (!binpath) {
-		if (r_file_exists (ofile->desc->name))
+		if (r_file_exists (ofile->desc->name)) {
 			binpath = strdup (ofile->desc->name);
+		}
 	}
 	if (!binpath) {
-		eprintf ("No bin file open?\n");
+		/* fallback to oo */
+		(void)r_core_cmd0 (core, "oo");
 		return;
 	}
 	int bits = core->assembler->bits;
@@ -261,11 +289,12 @@ R_API void r_core_file_reopen_debug(RCore *core, const char *args) {
 	char *newfile2 = strdup (newfile);
 	core->file->desc->uri = newfile;
 	core->file->desc->referer = NULL;
-	r_core_file_reopen (core, newfile, 0, 2);
+	//r_core_file_reopen (core, newfile, 0, 2);
 	r_config_set_i (core->config, "asm.bits", bits);
 	r_config_set_i (core->config, "cfg.debug", true);
+	r_core_file_reopen (core, newfile, 0, 2);
 	newfile = newfile2;
-
+#if !__WINDOWS__
 	//XXX: need cmd_debug.h for r_debug_get_baddr
 	ut64 new_baddr = r_debug_get_baddr (core, newfile);
 	ut64 old_baddr = r_config_get_i (core->config, "bin.baddr");
@@ -274,6 +303,7 @@ R_API void r_core_file_reopen_debug(RCore *core, const char *args) {
 		r_config_set_i (core->config, "bin.baddr", new_baddr);
 		r_core_bin_load (core, newfile, new_baddr);
 	}
+#endif
 	r_core_cmd0 (core, "sr PC");
 	free (oldname);
 	free (binpath);
@@ -285,17 +315,19 @@ static int cmd_open(void *data, const char *input) {
 		"Usage: o","[com- ] [file] ([offset])","",
 		"o","","list opened files",
 		"o*","","list opened files in r2 commands",
-		"oa"," [addr]","Open bin info from the given address",
-		"ob","[lbdos] [...]","list open binary files backed by fd",
+		"oa"," [?] [addr]","Open bin info from the given address",
+		"ob"," [?] [lbdos] [...]","list open binary files backed by fd",
 		"ob"," 4","priorize io and fd on 4 (bring to binfile to front)",
 		"oc"," [file]","open core file, like relaunching r2",
-		"oj","","list opened files in JSON format",
+		"oi","[-|idx]","alias for o, but using index instead of fd",
+		"oj","[?]	","list opened files in JSON format",
 		"oL","","list all IO plugins registered",
 		"om","[?]","create, list, remove IO maps",
 		"on"," [file] 0x4000","map raw file at 0x4000 (no r_bin involved)",
-		"oo","","reopen current file (kill+fork in debugger)",
+		"oo","[?]","reopen current file (kill+fork in debugger)",
 		"oo","+","reopen current file in read-write",
 		"ood"," [args]","reopen in debugger mode (with args)",
+		"oo[bnm]"," [...]","see oo? for help",
 		"op"," ["R_LIB_EXT"]","open r2 native plugin (asm, bin, core, ..)",
 		"o"," 4","priorize io on fd 4 (bring to front)",
 		"o","-1","close file descriptor 1",
@@ -312,6 +344,7 @@ static int cmd_open(void *data, const char *input) {
 		"oo+", "", "reopen in read-write",
 		"oob", "", "reopen loading rbin info",
 		"ood", "", "reopen in debug mode",
+		"oom", "", "reopen in malloc://",
 		"oon", "", "reopen without loading rbin info",
 		"oon+", "", "reopen in read-write mode without loading rbin info",
 		"oonn", "", "reopen without loading rbin info, but with header flags",
@@ -358,7 +391,7 @@ static int cmd_open(void *data, const char *input) {
 	case 'L':
 		r_io_plugin_list (core->io);
 		break;
-	case 'a':
+	case 'a': // "oa"
 		if ('?' == input[1]) {
 			const char *help_msg[] = {
 				"Usage:", "oa [addr] ([filename])", " # load bininfo and update flags",
@@ -410,10 +443,50 @@ static int cmd_open(void *data, const char *input) {
 			return 0;
 		}
 		if (input[1]==' ') {
-			if (r_lib_open (core->lib, input+2) == R_FAIL)
+			if (r_lib_open (core->lib, input+2) == R_FAIL) {
 				eprintf ("Oops\n");
+			}
 		} else {
 			eprintf ("Usage: op [r2plugin."R_LIB_EXT"]\n");
+		}
+		break;
+	case 'i': // "oi"
+		switch (input[1]) {
+		case ' ': // "oi "
+			{
+				RListIter *iter = NULL;
+				RCoreFile *f;
+				int nth = r_num_math (core->num, input + 2);
+				int count = 0;
+				r_list_foreach (core->files, iter, f) {
+					if (count == nth) {
+						r_io_raise (core->io, num);
+						break;
+					}
+					count++;
+				}
+			}
+			break;
+		case '-': // "oi-"
+			{
+				RListIter *iter = NULL;
+				RCoreFile *f;
+				int nth = r_num_math (core->num, input + 2);
+				int count = 0;
+				r_list_foreach (core->files, iter, f) {
+					if (count == nth) {
+						r_core_file_close_fd (core, f->desc->fd);
+						break;
+					}
+					count++;
+				}
+			}
+			break;
+		case 'j':
+		case '*':
+		case 0:
+			r_core_file_list (core, input[1]);
+			break;
 		}
 		break;
 	case '+':
@@ -437,7 +510,7 @@ static int cmd_open(void *data, const char *input) {
 			addr = 0LL;
 		}
 		if (num <= 0) {
-			const char *fn = input+1; //(isn?2:1);
+			const char *fn = input + 1; //(isn?2:1);
 			if (fn && *fn) {
 				if (isn) fn++;
 				file = r_core_file_open (core, fn, perms, addr);
@@ -490,9 +563,10 @@ static int cmd_open(void *data, const char *input) {
 			// TODO: rbin?
 			break;
 		default:
-			if (!r_core_file_close_fd (core, atoi (input+1)))
+			if (!r_core_file_close_fd (core, atoi (input + 1))) {
 				eprintf ("Unable to find filedescriptor %d\n",
-						atoi (input+1));
+						atoi (input + 1));
+			}
 			break;
 		case '?':
 			eprintf ("Usage: o-# or o-*, where # is the filedescriptor number\n");
@@ -507,6 +581,9 @@ static int cmd_open(void *data, const char *input) {
 		break;
 	case 'o':
 		switch (input[1]) {
+		case 'm': // "oom"
+			r_core_file_reopen_in_malloc (core);
+			break;
 		case 'd': // "ood" : reopen in debugger
 			if ('?' == input[2]) {
 				const char *help_msg[] = {
@@ -587,10 +664,12 @@ static int cmd_open(void *data, const char *input) {
 		r_core_fini (core);
 		r_core_init (core);
 		if (input[1] && input[2]) {
-			if (!r_core_file_open (core, input+2, R_IO_READ, 0))
+			if (!r_core_file_open (core, input + 2, R_IO_READ, 0)) {
 				eprintf ("Cannot open file\n");
-			if (!r_core_bin_load (core, NULL, baddr))
+			}
+			if (!r_core_bin_load (core, NULL, baddr)) {
 				r_config_set_i (core->config, "io.va", false);
+			}
 		} else {
 			eprintf ("Missing argument\n");
 		}

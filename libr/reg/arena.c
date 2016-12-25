@@ -81,16 +81,21 @@ R_API bool r_reg_read_regs(RReg *reg, ut8 *buf, const int len) {
 
 /* TODO reduce number of return statements */
 R_API bool r_reg_set_bytes(RReg *reg, int type, const ut8 *buf, const int len) {
-	int maxsz, ret = false;
+	int maxsz, minsz;
 	struct r_reg_set_t *regset;
 	RRegArena *arena;
-	if (len < 1 || !buf)
+	if (len < 1 || !buf) {
 		return false;
+	}
 	if (type < 0 || type >= R_REG_TYPE_LAST) return false;
 	regset = &reg->regset[type];
 	arena = regset->arena;
+	if (!arena) {
+		return false;
+	}
 	maxsz = R_MAX (arena->size, len);
-	if ((arena->size != len) || (arena->bytes == NULL)) {
+	minsz = R_MIN (arena->size, len);
+	if ((arena->size != len) || (!arena->bytes)) {
 		arena->bytes = calloc (1, maxsz);
 		if (!arena->bytes) {
 			arena->size = 0;
@@ -99,21 +104,20 @@ R_API bool r_reg_set_bytes(RReg *reg, int type, const ut8 *buf, const int len) {
 		arena->size = maxsz;
 	}
 	if (arena->size != maxsz) {
-		ut8 *buf = realloc (arena->bytes, maxsz);
-		if (buf) {
-			arena->size = maxsz;
-			arena->bytes = buf;
-		} else {
+		ut8 *tmp = realloc (arena->bytes, maxsz);
+		if (!tmp) {
 			eprintf ("Error resizing arena to %d\n", len);
 			return false;
 		}
+		arena->size = maxsz;
+		arena->bytes = tmp;
 	}
 	if (arena->bytes) {
-		memset (arena->bytes, 0, maxsz);
-		memcpy (arena->bytes, buf, len);
-		ret = true;
-	} else ret = false;
-	return ret;
+		memset (arena->bytes, 0, arena->size);
+		memcpy (arena->bytes, buf, minsz);
+		return true;
+	}
+	return false;
 }
 
 R_API int r_reg_fit_arena(RReg *reg) {
@@ -153,8 +157,9 @@ R_API int r_reg_fit_arena(RReg *reg) {
 R_API RRegArena *r_reg_arena_new(int size) {
 	RRegArena *arena = R_NEW0 (RRegArena);
 	if (arena) {
-		if (size < 1)
+		if (size < 1) {
 			size = 1;
+		}
 		if (!(arena->bytes = malloc (size + 8))) {
 			free (arena);
 			arena = NULL;
@@ -243,18 +248,33 @@ R_API ut8 *r_reg_arena_peek(RReg *reg) {
 		return NULL;
 	}
 	ut8 *ret = malloc (regset->arena->size);
-	if (!ret) return NULL;
+	if (!ret) {
+		return NULL;
+	}
 	memcpy (ret, regset->arena->bytes, regset->arena->size);
 	return ret;
 }
 
 R_API void r_reg_arena_poke(RReg *reg, const ut8 *ret) {
 	RRegSet *regset = r_reg_regset_get (reg, R_REG_TYPE_GPR);
-	if (!ret || !regset || !regset->arena || !regset->arena->bytes)
+	if (!ret || !regset || !regset->arena || !regset->arena->bytes) {
 		return;
+	}
 	memcpy (regset->arena->bytes, ret, regset->arena->size);
 }
 
+R_API ut8 *r_reg_arena_dup(RReg *reg, const ut8 *source) {
+	RRegSet *regset = r_reg_regset_get (reg, R_REG_TYPE_GPR);
+	if (!reg || !regset || !regset->arena || (regset->arena->size < 1)) {
+		return NULL;
+	}
+	ut8 *ret = malloc (regset->arena->size);
+	if (!ret) {
+		return NULL;
+	}
+	memcpy (ret, source, regset->arena->size);
+	return ret;
+}
 
 R_API int r_reg_arena_set_bytes(RReg *reg, const char* str) {
 	while (IS_WHITESPACE (*str)) {
@@ -287,4 +307,20 @@ R_API int r_reg_arena_set_bytes(RReg *reg, const char* str) {
 	}
 	free (bin_str);
 	return 0;
+}
+
+R_API void r_reg_arena_shrink(RReg *reg) {
+	RListIter *iter;
+	RRegArena *a;
+	int i;
+	for (i = 0; i < R_REG_TYPE_LAST; i++) {
+		r_list_foreach (reg->regset[i].pool, iter, a) {
+			free (a->bytes);
+			/* ha ha ha */
+			a->bytes = calloc (1024, 1);
+			a->size = 1024;
+			/* looks like sizing down the arena breaks the regsync */
+			/* and sizing it up fixes reallocation when fit() is called */
+		}
+	}
 }

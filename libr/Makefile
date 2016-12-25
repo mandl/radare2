@@ -13,7 +13,7 @@ PWD=$(shell pwd)
 
 LIBS0=util hash
 LIBS1=socket reg cons magic bp search config
-LIBS2=syscall lang io crypto flags
+LIBS2=syscall lang io crypto flag
 LIBS3=fs anal bin
 LIBS4=parse
 LIBS5=asm debug
@@ -40,16 +40,25 @@ endif
 # looks hacky :D
 #AR=arm-linux-androideabi-ar
 
+S=$
+B=`
 libr.a:
 	rm -rf .libr
 	mkdir .libr
 	for FILE in */libr_*.a ../shlr/*/*.a ; do \
-		mkdir -p .libr/$$FILE ; \
-		cp -f $$FILE .libr/$$FILE ; \
-		(cd .libr/$$FILE ; ${AR} x *.a ; rm -f *.a ) ; \
-		done
-	cd .libr ; ${AR} qv libr.a `find * -iname *.o`
+		F=${B}basename $$FILE${B} ; \
+		Q=${B}dirname $$FILE${B} ; \
+		D=${B}basename $$Q${B} ; \
+		mkdir -p .libr/$$D ; \
+		cp -f $$FILE .libr/$$D/$$F ; \
+		ls -l .libr/$$D/$$F ; \
+		(cd .libr/$$D && ${AR} x $$F || true ) ; \
+	done
+	echo lets ar
+	cd .libr ; ${AR} qv libr.a `find * -iname *.o 2> /dev/null`
+	echo lets m
 	mv .libr/libr.a libr.a
+	echo ranlibin
 	${RANLIB} libr.a
 	rm -rf .libr
 

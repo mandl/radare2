@@ -112,7 +112,6 @@ R_API char *r_anal_data_to_string(RAnalData *d) {
 		int msz = mallocsz - idx;
 		snprintf (line + idx, msz, "..");
 		idx += 2;
-		msz -= 2;
 	}
 	strcat (line, "  ");
 	idx += 2;
@@ -120,7 +119,6 @@ R_API char *r_anal_data_to_string(RAnalData *d) {
 		switch (d->type) {
 		case R_ANAL_DATA_TYPE_STRING:
 			snprintf (line + idx, mallocsz - idx, "string \"%s\"", d->str);
-			idx = strlen (line);
 			break;
 		case R_ANAL_DATA_TYPE_WIDE_STRING:
 			strcat (line, "wide string");
@@ -239,8 +237,9 @@ R_API RAnalData *r_anal_data(RAnal *anal, ut64 addr, const ut8 *buf, int size) {
 	int bits = anal->bits;
 	int word = R_MIN (8, bits / 8);
 
-	if (size < 4)
+	if (size < 4) {
 		return NULL;
+	}
 	if (size >= word && is_invalid (buf, word))
 		return r_anal_data_new (addr, R_ANAL_DATA_TYPE_INVALID,
 					-1, buf, word);
@@ -306,7 +305,7 @@ R_API const char *r_anal_data_kind(RAnal *a, ut64 addr, const ut8 *buf, int len)
 		if (str && !buf[i])
 			str++;
 		data = r_anal_data (a, addr + i, buf + i, len - i);
-		if (data == NULL) {
+		if (!data) {
 			i += word;
 			continue;
 		}

@@ -9,6 +9,9 @@ include ../mk/${COMPILER}.mk
 # Build against last capstone release or next
 CS_RELEASE=0
 
+CAPSTONE_CFLAGS?=-g
+# CAPSTONE_MAKEFLAGS?=CAPSTONE_ARCHS="arm aarch64"
+
 GIT?=git
 WGET?=wget
 
@@ -20,9 +23,9 @@ CS_PATCHES=0
 else
 CS_TAR=
 CS_URL=$(GIT_PREFIX)github.com/aquynh/capstone.git
-CS_UPD=20160828
+CS_UPD=20161213
 CS_BRA=next
-CS_TIP=87a25bb543c8e4c09b48d4b4a6c7db31ce58df06
+CS_TIP=0237e4ca0cf3687e60e3f7626d144ff07d1aecf5
 # REVERT THIS COMMIT BECAUSE ITS WRONG
 CS_REV=
 CS_PATCHES=1
@@ -42,6 +45,7 @@ MODS+=gdb
 MODS+=qnx
 SDB_URL=git://github.com/radare/sdb
 #SDB_URL=/Users/pancake/prg/sdb
+SPP_URL=git://github.com/radare/spp
 PWD=$(shell pwd)
 SDB_CONFIG=${PWD}/sdb-config.mk
 
@@ -242,8 +246,6 @@ endif
 .PHONY: capstone
 endif
 
-CAPSTONE_CFLAGS=-g
-
 ifeq (${EXT_AR},)
 all:
 	echo EXT_AR is not defined
@@ -252,30 +254,43 @@ endif
 
 capstone-build: capstone
 	cd capstone && CFLAGS="-Dmips=mips ${CAPSTONE_CFLAGS} $(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
-		$(MAKE) CC="$(CC)" AR_EXT=a IS_CYGWIN=0 CAPSTONE_STATIC=yes CAPSTONE_SHARED=no \
+		$(MAKE) $(CAPSTONE_MAKEFLAGS) CC="$(CC)" AR_EXT=a IS_CYGWIN=0 CAPSTONE_STATIC=yes CAPSTONE_SHARED=no \
 		RANLIB="$(RANLIB)" AR="$(AR)" IS_MINGW=0 libcapstone.a
 ifneq (${EXT_AR},a)
 	-cp -f capstone/libcapstone.a capstone/libcapstone.${EXT_AR}
 endif
 endif
 
-www-sync-m:
+www-sync-m sync-www-m:
 	cp -rf ../../radare2-webui/dist/m www/m.tmp
 	rm -rf www/m
 	mv www/m.tmp www/m
 	git add www/m
 
-www-sync-p:
+www-sync-p sync-www-p:
 	cp -rf ../../radare2-webui/dist/p www/p.tmp
 	rm -rf www/p
 	mv www/p.tmp www/p
 	git add www/p
 
-www-sync-t:
+www-sync-t sync-www-t:
 	cp -rf ../../radare2-webui/dist/t www/t.tmp
 	rm -rf www/t
 	mv www/t.tmp www/t
 	git add www/p
 
-www-sync: www-sync-m www-sync-p www-sync-t
+sync-www www-sync: www-sync-m www-sync-p www-sync-t
 	@echo webui sync done
+
+spp-sync sync-spp:
+	-git rm -r spp
+	rm -rf spp
+	git clone --depth 1 ${SPP_URL} spp
+	rm -rf spp/.git*
+	rm -rf spp/t
+	git add spp
+
+spp: spp-sync
+	cd spp ; $(MAKE)
+
+.PHONY: spp

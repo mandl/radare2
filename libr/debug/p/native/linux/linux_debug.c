@@ -104,7 +104,11 @@ int linux_handle_signals (RDebug *dbg) {
  */
 RDebugReasonType linux_ptrace_event (RDebug *dbg, int pid, int status) {
 	ut32 pt_evt;
+#if __powerpc64__ || __arm64__ || __aarch64__ || __x86_64__
+	ut64 data;
+#else
 	ut32 data;
+#endif
 
 	/* we only handle stops with SIGTRAP here */
 	if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP) {
@@ -123,7 +127,7 @@ RDebugReasonType linux_ptrace_event (RDebug *dbg, int pid, int status) {
 				return R_DEBUG_REASON_ERROR;
 			}
 
-			eprintf ("PTRACE_EVENT_FORK new_pid=%d\n", data);
+			eprintf ("PTRACE_EVENT_FORK new_pid=0x%"PFMT64x"\n", data);
 			dbg->forked_pid = data;
 			// TODO: more handling here?
 			/* we have a new process that we are already tracing */
@@ -135,7 +139,7 @@ RDebugReasonType linux_ptrace_event (RDebug *dbg, int pid, int status) {
 			r_sys_perror ("ptrace GETEVENTMSG");
 			return R_DEBUG_REASON_ERROR;
 		}
-		eprintf ("PTRACE_EVENT_EXIT pid=%d, status=%d\n", pid, data);
+		eprintf ("PTRACE_EVENT_EXIT pid=%d, status=0x%"PFMT64x"\n", pid, data);
 		return R_DEBUG_REASON_EXIT_PID;
 	default:
 		eprintf ("Unknown PTRACE_EVENT encountered: %d\n", pt_evt);
@@ -163,8 +167,7 @@ int linux_step (RDebug *dbg) {
 	return ret;
 }
 
-int linux_attach (RDebug *dbg, int pid) {
-	int ret = -1;
+bool linux_set_options (RDebug *dbg, int pid) {
 	int traceflags = 0;
 	if (dbg->trace_forks) {
 		traceflags |= PTRACE_O_TRACEFORK;
@@ -179,19 +182,32 @@ int linux_attach (RDebug *dbg, int pid) {
 	if (dbg->trace_execs) {
 		traceflags |= PTRACE_O_TRACEEXEC;
 	}
-	traceflags |= PTRACE_O_TRACEEXIT;
-	if (ptrace (PTRACE_SETOPTIONS, pid, 0, traceflags) == -1) {
-		/* ignore ptrace-options errors */
+	if (dbg->trace_aftersyscall) {
+		traceflags |= PTRACE_O_TRACEEXIT;
 	}
-	ret = ptrace (PTRACE_ATTACH, pid, 0, 0);
-	if (ret != -1) perror ("ptrace (PT_ATTACH)");
+	/* SIGTRAP | 0x80 on signal handler .. not supported on all archs */
+	traceflags |= PTRACE_O_TRACESYSGOOD;
+	if (ptrace (PTRACE_SETOPTIONS, pid, 0, traceflags) == -1) {
+		return false;
+	}
+	return true;
+}
+
+int linux_attach (RDebug *dbg, int pid) {
+	linux_set_options (dbg, pid);
+	int ret = ptrace (PTRACE_ATTACH, pid, 0, 0);
+	if (ret != -1) {
+		perror ("ptrace (PT_ATTACH)");
+	}
 	return pid;
 }
 
 RDebugInfo *linux_info (RDebug *dbg, const char *arg) {
 	char procpid_cmdline[1024];
 	RDebugInfo *rdi = R_NEW0 (RDebugInfo);
-	if (!rdi) return NULL;
+	if (!rdi) {
+		return NULL;
+	}
 	rdi->status = R_DBG_PROC_SLEEP; // TODO: Fix this
 	rdi->pid = dbg->pid;
 	rdi->tid = dbg->tid;
@@ -396,9 +412,14 @@ int linux_reg_read (RDebug *dbg, int type, ut8 *buf, int size) {
 			if (i == 4 || i == 5) continue;
 			long ret = ptrace (PTRACE_PEEKUSER, pid, 
 					r_offsetof (struct user, u_debugreg[i]), 0);
-			memcpy (buf + (i * sizeof(ret)), &ret, sizeof(ret));
+			if ((i+1) * sizeof (ret) > size) {
+				eprintf ("linux_reg_get: Buffer too small %d\n", size);
+				break;
+			}
+			memcpy (buf + (i * sizeof (ret)), &ret, sizeof (ret));
 		}
-		return sizeof (R_DEBUG_REG_T);
+		struct user a;
+		return sizeof (a.u_debugreg);
 	}
 #else
 	#warning Android X86 does not support DRX
@@ -532,7 +553,11 @@ int linux_reg_write (RDebug *dbg, int type, const ut8 *buf, int size) {
 #else 
 		int ret = ptrace (PTRACE_SETREGS, dbg->pid, 0, (void*)buf);
 #endif
-		if (size > sizeof (R_DEBUG_REG_T)) size = sizeof (R_DEBUG_REG_T);
+#if DEAD_CODE
+		if (size > sizeof (R_DEBUG_REG_T)) {
+			size = sizeof (R_DEBUG_REG_T);
+		}
+#endif
 		return (ret != 0) ? false : true;
 	}
 	return false;

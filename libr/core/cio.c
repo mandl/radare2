@@ -84,12 +84,14 @@ R_API int r_core_dump(RCore *core, const char *file, ut64 addr, ut64 size, int a
 		fclose (fd);
 		return false;
 	}
-	r_cons_break (NULL, NULL);
-	for (i = 0; i<size; i += bs) {
-		if (r_cons_singleton ()->breaked)
+	r_cons_break_push (NULL, NULL);
+	for (i = 0; i < size; i += bs) {
+		if (r_cons_is_breaked ()) {
 			break;
-		if ((i + bs) > size)
+		}
+		if ((i + bs) > size) {
 			bs = size - i;
+		}
 		r_io_read_at (core->io, addr + i, buf, bs);
 		if (fwrite (buf, bs, 1, fd) < 1) {
 			eprintf ("write error\n");
@@ -97,7 +99,7 @@ R_API int r_core_dump(RCore *core, const char *file, ut64 addr, ut64 size, int a
 		}
 	}
 	eprintf ("dumped 0x%"PFMT64x" bytes\n", i);
-	r_cons_break_end ();
+	r_cons_break_pop ();
 	fclose (fd);
 	free (buf);
 	return true;
@@ -294,11 +296,10 @@ R_API int r_core_seek_archbits(RCore *core, ut64 addr) {
 		return 1;
 	}
 	if (oldarch) {
-		if (!(flag && !strcmp (oldarch, arch))) {
+		if (!(flag && arch && oldarch && !strcmp (oldarch, arch))) {
 			r_config_set (core->config, "asm.arch", oldarch);
 		}
-		free (oldarch);
-		oldarch = NULL;
+		R_FREE (oldarch);
 	}
 	if (oldbits) {
 		r_config_set_i (core->config, "asm.bits", oldbits);
@@ -368,15 +369,17 @@ R_API int r_core_seek_delta(RCore *core, st64 addr) {
 
 R_API int r_core_write_at(RCore *core, ut64 addr, const ut8 *buf, int size) {
 	int ret;
-	if (!core->io || !core->file || size<1)
+	if (!core->io || !core->file || size < 1) {
 		return false;
+	}
 	ret = r_io_use_desc (core->io, core->file->desc);
 	if (ret != -1) {
 		ret = r_io_write_at (core->io, addr, buf, size);
-		if (addr >= core->offset && addr <= core->offset+core->blocksize)
+		if (addr >= core->offset && addr <= core->offset+core->blocksize) {
 			r_core_block_read (core);
+		}
 	}
-	return (ret==-1)? false: true;
+	return (ret == -1)? false: true;
 }
 
 R_API int r_core_extend_at(RCore *core, ut64 addr, int size) {
@@ -460,7 +463,7 @@ static RCoreFile * r_core_file_set_first_valid(RCore *core) {
 }
 
 R_API int r_core_block_read(RCore *core) {
-	if (core->file == NULL && r_core_file_set_first_valid(core) == NULL) {
+	if (!core->file && !r_core_file_set_first_valid (core)) {
 		memset (core->block, core->io->Oxff, core->blocksize);
 		return -1;
 	}
@@ -475,9 +478,10 @@ R_API int r_core_block_read(RCore *core) {
 }
 
 R_API int r_core_read_at(RCore *core, ut64 addr, ut8 *buf, int size) {
-	if (!core->io || !core->file || !core->file->desc || size<1) {
-		if (size > 0)
+	if (!core || !core->io || !core->file || !core->file->desc || size < 1) {
+		if (core && core->io && size > 0) {
 			memset (buf, core->io->Oxff, size);
+		}
 		return false;
 	}
 	r_io_use_desc (core->io, core->file->desc);

@@ -40,6 +40,24 @@ typedef struct {
 	const char* input;
 } RapThread;
 
+static void http_logf(RCore *core, const char *fmt, ...) {
+	bool http_log_enabled = r_config_get_i (core->config, "http.log");
+	va_list ap;
+	va_start (ap, fmt);
+	if (http_log_enabled) {
+		const char *http_log_file = r_config_get (core->config, "http.logfile");
+		if (http_log_file && *http_log_file) {
+			char * msg = calloc (4096, 1);
+			vsnprintf (msg, 4095, fmt, ap);
+			r_file_dump (http_log_file, (const ut8*)msg, -1, true);
+			free (msg);
+		} else {
+			vfprintf (stderr, fmt, ap);
+		}
+	}
+	va_end (ap);
+}
+
 static char *rtrcmd (TextLog T, const char *str) {
 	char *res, *ptr2;
 	char *ptr = r_str_uri_encode (str);
@@ -51,9 +69,10 @@ static char *rtrcmd (TextLog T, const char *str) {
 	if (ptr2) {
 		ptr2[len] = 0;
 		res = strstr (ptr2, "\n\n");
-		if (res) res = strstr (res + 1, "\n\n");
+		if (res) {
+			res = strstr (res + 1, "\n\n");
+		}
 		return res? res + 2: ptr2;
-		// return res; // ptr2;
 	}
 	return NULL;
 }
@@ -62,7 +81,9 @@ static void showcursor(RCore *core, int x) {
 	if (core && core->vmode) {
 		r_cons_show_cursor (x);
 		r_cons_enable_mouse (x? r_config_get_i (core->config, "scr.wheel"): false);
-	} else r_cons_enable_mouse (false);
+	} else {
+		r_cons_enable_mouse (false);
+	}
 	r_cons_flush ();
 }
 
@@ -95,7 +116,9 @@ static void rtr_textlog_chat (RCore *core, TextLog T) {
 		if (r_cons_fgets (buf, sizeof (buf) - 1, 0, NULL) < 0) {
 			goto beach;
 		}
-		if (!*buf) continue;
+		if (!*buf) {
+			continue;
+		}
 		if (!strcmp (buf, "/help")) {
 			eprintf ("/quit           quit the chat (same as ^D)\n");
 			eprintf ("/nick <nick>    set cfg.user nick name\n");
@@ -132,10 +155,10 @@ beach:
 	free (oldprompt);
 }
 
-static bool rtr_visual (RCore *core, TextLog T, const char *cmd) {
+static bool rtr_visual(RCore *core, TextLog T, const char *cmd) {
 	bool autorefresh = false;
 	if (cmd) {
-		r_cons_break (NULL, NULL);
+		r_cons_break_push (NULL, NULL);
 		for (;;) {
 			char *ret;
 			r_cons_clear00 ();
@@ -143,11 +166,12 @@ static bool rtr_visual (RCore *core, TextLog T, const char *cmd) {
 			r_cons_println (ret);
 			free (ret);
 			r_cons_flush ();
-			if (r_cons_singleton ()->breaked)
+			if (r_cons_is_breaked ()) {
 				break;
+			}
 			r_sys_sleep (1);
 		}
-		r_cons_break_end ();
+		r_cons_break_pop ();
 	} else {
 		const char *cmds[] = { "px", "pd", "pxa", "dr", "sr SP;pxa", NULL };
 		int cmdidx = 0;
@@ -165,16 +189,16 @@ static bool rtr_visual (RCore *core, TextLog T, const char *cmd) {
 			if (autorefresh) {
 				r_cons_printf ("(auto-refresh)\n");
 				r_cons_flush ();
-				r_cons_break (NULL, NULL);
+				r_cons_break_push (NULL, NULL);
 				r_sys_sleep (1);
-				if (r_cons_singleton ()->breaked)  {
+				if (r_cons_is_breaked ())  {
 					autorefresh = false;
 					ch = r_cons_readchar ();
 				} else {
-					r_cons_break_end ();
+					r_cons_break_pop ();
 					continue;
 				}
-				r_cons_break_end ();
+				r_cons_break_pop ();
 			} else {
 				ch = r_cons_readchar ();
 			}
@@ -278,11 +302,12 @@ TODO:
 			case 'h': free (rtrcmd (T, "s-1")); break;
 			case 'l': free (rtrcmd (T, "s+1")); break;
 			case 'J':
-				if (cmdidx==1) {
+				if (cmdidx == 1) {
 					free (rtrcmd (T, "4so"));
 				} else {
 					free (rtrcmd (T, "s+32"));
-				} break;
+				}
+				break;
 			case 'K': free (rtrcmd (T, "s-32")); break;
 			case 'H': free (rtrcmd (T, "s-2")); break;
 			case 'L': free (rtrcmd (T, "s+2")); break;
@@ -358,7 +383,7 @@ static void activateDieTime (RCore *core) {
 }
 
 // return 1 on error
-static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
+static int r_core_rtr_http_run(RCore *core, int launch, const char *path) {
 	RConfig *newcfg = NULL, *origcfg = NULL;
 	char headers[128] = {0};
 	RSocketHTTPRequest *rs;
@@ -464,9 +489,8 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 
 	core->block = newblk;
 // TODO: handle mutex lock/unlock here
-	while (!r_cons_singleton ()->breaked) {
-		r_cons_break ((RConsBreak)r_core_rtr_http_stop, core);
-
+	r_cons_break_push ((RConsBreak)r_core_rtr_http_stop, core);
+	while (!r_cons_is_breaked ()) {
 		/* restore environment */
 		core->config = origcfg;
 		r_config_set (origcfg, "scr.html", r_config_get (origcfg, "scr.html"));
@@ -507,14 +531,16 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 			continue;
 		}
 		if (allow && *allow) {
-			int accepted = false;
+			bool accepted = false;
 			const char *allows_host;
 			char *p, *peer = r_socket_to_string (rs->s);
 			char *allows = strdup (allow);
 			//eprintf ("Firewall (%s)\n", allows);
 			int i, count = r_str_split (allows, ',');
 			p = strchr (peer, ':');
-			if (p) *p = 0;
+			if (p) {
+				*p = 0;
+			}
 			for (i = 0; i < count; i++) {
 				allows_host = r_str_word_get0 (allows, i);
 				//eprintf ("--- (%s) (%s)\n", host, peer);
@@ -531,7 +557,7 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 			}
 		}
 		if (!rs->method || !rs->path) {
-			eprintf ("Invalid http headers received from client\n");
+			http_logf (core, "Invalid http headers received from client\n");
 			r_socket_http_close (rs);
 			continue;
 		}
@@ -539,13 +565,14 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 
 		if (r_config_get_i (core->config, "http.verbose")) {
 			char *peer = r_socket_to_string (rs->s);
-			eprintf ("[HTTP] %s %s\n", peer, rs->path);
+			http_logf (core, "[HTTP] %s %s\n", peer, rs->path);
 			free (peer);
 		}
-		if (r_config_get_i (core->config, "http.dirlist"))
-			if (r_file_is_directory (rs->path))
+		if (r_config_get_i (core->config, "http.dirlist")) {
+			if (r_file_is_directory (rs->path)) {
 				dir = strdup (rs->path);
-
+			}
+		}
 		if (r_config_get_i (core->config, "http.cors")) {
 			strcpy (headers, "Access-Control-Allow-Origin: *\n"
 				"Access-Control-Allow-Headers: Origin, "
@@ -554,8 +581,7 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 
 		if (!strcmp (rs->method, "OPTIONS")) {
 			r_socket_http_response (rs, 200, "", 0, headers);
-		} else
-		if (!strcmp (rs->method, "GET")) {
+		} else if (!strcmp (rs->method, "GET")) {
 			if (!strncmp (rs->path, "/up/", 4)) {
 				if (r_config_get_i (core->config, "http.upget")) {
 					const char *uproot = r_config_get (core->config, "http.uproot");
@@ -573,7 +599,7 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 								free (f);
 							} else {
 								r_socket_http_response (rs, 403, "Permission denied", 0, headers);
-								eprintf ("http: Cannot open '%s'\n", path);
+								http_logf (core, "http: Cannot open '%s'\n", path);
 							}
 						} else {
 							if (dir) {
@@ -581,18 +607,17 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 								r_socket_http_response (rs, 404, resp, 0, headers);
 								free (resp);
 							} else {
-								eprintf ("File '%s' not found\n", path);
+								http_logf (core, "File '%s' not found\n", path);
 								r_socket_http_response (rs, 404, "File not found\n", 0, headers);
 							}
 						}
 						free (path);
 					}
 				} else {
-					r_socket_http_response (rs, 403,
-							"Permission denied\n", 0, NULL);
+					r_socket_http_response (rs, 403, "Permission denied\n", 0, NULL);
 				}
 			} else if (!strncmp (rs->path, "/cmd/", 5)) {
-				char *cmd = rs->path +5;
+				char *cmd = rs->path + 5;
 				const char *httpcmd = r_config_get (core->config, "http.uri");
 				const char *httpref = r_config_get (core->config, "http.referer");
 				bool httpref_enabled;
@@ -608,7 +633,7 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 					httpref_enabled = false;
 				}
 
-				while (*cmd=='/') cmd++;
+				while (*cmd == '/') cmd++;
 				if (httpref_enabled && (!rs->referer || (refstr && !strstr (rs->referer, refstr)))) {
 					r_socket_http_response (rs, 503, "", 0, headers);
 				} else {
@@ -646,7 +671,6 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 							// eprintf ("CMD (%s)\n", cmd);
 							out = r_core_cmd_str_pipe (core, cmd);
 						}
-						// eprintf ("\nOUT LEN = %d\n", strlen (out));
 						if (out) {
 							char *res = r_str_uri_encode (out);
 							char *newheaders = r_str_newf (
@@ -655,7 +679,9 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 							free (out);
 							free (newheaders);
 							free (res);
-						} else r_socket_http_response (rs, 200, "", 0, headers);
+						} else {
+							r_socket_http_response (rs, 200, "", 0, headers);
+						}
 					}
 				}
 				free (refstr);
@@ -699,32 +725,37 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 					char *f = r_file_slurp (path, &sz);
 					if (f) {
 						const char *ct = NULL;
-						if (strstr (path, ".js")) ct = "Content-Type: application/javascript\n";
-						if (strstr (path, ".css")) ct = "Content-Type: text/css\n";
-						if (strstr (path, ".html")) ct = "Content-Type: text/html\n";
+						if (strstr (path, ".js")) {
+							ct = "Content-Type: application/javascript\n";
+						}
+						if (strstr (path, ".css")) {
+							ct = "Content-Type: text/css\n";
+						}
+						if (strstr (path, ".html")) {
+							ct = "Content-Type: text/html\n";
+						}
 						char *hdr = r_str_newf ("%s%s", ct, headers);
 						r_socket_http_response (rs, 200, f, sz, hdr);
 						free (hdr);
 						free (f);
 					} else {
 						r_socket_http_response (rs, 403, "Permission denied", 0, headers);
-						eprintf ("http: Cannot open '%s'\n", path);
+						http_logf (core, "http: Cannot open '%s'\n", path);
 					}
 				} else {
 					if (dir) {
 						char *resp = rtr_dir_files (dir);
-						eprintf ("Dirlisting %s\n", dir);
+						http_logf (core, "Dirlisting %s\n", dir);
 						r_socket_http_response (rs, 404, resp, 0, headers);
 						free (resp);
 					} else {
-						eprintf ("File '%s' not found\n", path);
+						http_logf (core, "File '%s' not found\n", path);
 						r_socket_http_response (rs, 404, "File not found\n", 0, headers);
 					}
 				}
 				free (path);
 			}
-		} else
-		if (!strcmp (rs->method, "POST")) {
+		} else if (!strcmp (rs->method, "POST")) {
 			ut8 *ret;
 			int retlen;
 			char buf[128];
@@ -738,7 +769,7 @@ static int r_core_rtr_http_run (RCore *core, int launch, const char *path) {
 						char *filename = r_file_root (
 							r_config_get (core->config, "http.uproot"),
 							rs->path + 4);
-						eprintf ("UPLOADED '%s'\n", filename);
+						http_logf (core, "UPLOADED '%s'\n", filename);
 						r_file_dump (filename, ret, retlen, 0);
 						free (filename);
 						snprintf (buf, sizeof (buf),
@@ -772,10 +803,11 @@ the_end:
 		r_config_set (core->config, "http.allow", allow);
 		r_config_set (core->config, "http.ui", httpui);
 	}
-	r_cons_break_end ();
+	r_cons_break_pop ();
 	core->http_up = false;
 	r_socket_free (s);
 	r_config_free (newcfg);
+	/* refresh settings - run callbacks */
 	r_config_set (origcfg, "scr.html", r_config_get (origcfg, "scr.html"));
 	r_config_set (origcfg, "scr.color", r_config_get (origcfg, "scr.color"));
 	r_config_set (origcfg, "scr.interactive", r_config_get (origcfg, "scr.interactive"));
@@ -783,8 +815,6 @@ the_end:
 }
 
 static int r_core_rtr_http_thread (RThread *th) {
-	int ret;
-
 	if (!th) {
 		return false;
 	}
@@ -792,7 +822,7 @@ static int r_core_rtr_http_thread (RThread *th) {
 	if (!ht || !ht->core) {
 		return false;
 	}
-	ret = r_core_rtr_http_run (ht->core, ht->launch, ht->path);
+	int ret = r_core_rtr_http_run (ht->core, ht->launch, ht->path);
 	R_FREE (ht->path);
 	return ret;
 }
@@ -961,7 +991,9 @@ R_API void r_core_rtr_add(RCore *core, const char *_input) {
 	}
 	*file++ = 0;
 	port = r_str_chop (port);
-	while (*file == ' ') file++;
+	while (*file == ' ') {
+		file++;
+	}
 	if (r_sandbox_enable (0)) {
 		eprintf ("sandbox: connect disabled\n");
 		return;
@@ -1108,11 +1140,11 @@ R_API void r_core_rtr_add(RCore *core, const char *_input) {
 		eprintf ("Connected to: %s at port %s\n", host, port);
 		break;
 	}
-
 	ret = core->num->value;
 	for (i = 0; i < RTR_MAX_HOSTS; i++) {
-		if (rtr_host[i].fd)
+		if (rtr_host[i].fd) {
 			continue;
+		}
 		rtr_host[i].proto = proto;
 		strncpy (rtr_host[i].host, host, sizeof (rtr_host[i].proto)-1);
 		rtr_host[i].port = r_num_get (core->num, port);
@@ -1135,9 +1167,10 @@ R_API void r_core_rtr_remove(RCore *core, const char *input) {
 			if (rtr_host[i].fd && rtr_host[i].fd->fd == fd) {
 				r_socket_free (rtr_host[i].fd);
 				rtr_host[i].fd = NULL;
-				if (rtr_n == i)
+				if (rtr_n == i) {
 					for (rtr_n = 0; !rtr_host[rtr_n].fd \
 						&& rtr_n < RTR_MAX_HOSTS - 1; rtr_n++);
+				}
 				break;
 		}
 	} else {
@@ -1170,10 +1203,12 @@ R_API void r_core_rtr_session(RCore *core, const char *input) {
 				"fd:%d> ", rtr_host[rtr_n].fd->fd);
 		free (r_line_singleton ()->prompt);
 		r_line_singleton ()->prompt = strdup (prompt);
-		if (r_cons_fgets (buf, sizeof (buf), 0, NULL) < 1)
+		if (r_cons_fgets (buf, sizeof (buf), 0, NULL) < 1) {
 			break;
-		if (!*buf || *buf == 'q')
+		}
+		if (!*buf || *buf == 'q') {
 			break;
+		}
 		if (*buf == 'V') {
 			eprintf ("Visual mode not supported\n");
 			continue;
@@ -1200,6 +1235,7 @@ static void r_rap_packet_fill(ut8 *buf, const ut8* src, int len) {
 }
 
 static void r_core_rtr_rap_run(RCore *core, const char *input) {
+	/* ouch, this hurts a bit, isnt? */
 	r_core_cmdf (core, "o rap://%s", input);
 }
 
@@ -1218,14 +1254,16 @@ static int r_core_rtr_rap_thread (RThread *th) {
 R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 	char bufw[1024], bufr[8], *cmd_output = NULL;
 	const char *cmd = NULL;
-	int i, cmd_len, fd = atoi (input);
+	unsigned int cmd_len;
+	int i, fd = atoi (input);
 
-	if (*input==':' && !strchr (input + 1, ':')) {
+	// "=:"
+	if (*input == ':' && !strchr (input + 1, ':')) {
 		r_core_rtr_rap_run (core, input);
 		return;
 	}
 
-	if (*input=='&') {
+	if (*input == '&') {
 		if (rapthread) {
 			eprintf ("RAP Thread is already running\n");
 			eprintf ("This is experimental and probably buggy. Use at your own risk\n");
@@ -1282,9 +1320,10 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 	r_socket_read (fh, (ut8*)bufr, 5);
 	if (bufr[0] == (char)(RAP_RMT_CMD)) {
 		cmd_len = r_read_at_be32 (bufr, 1);
-		cmd = malloc (cmd_len);
-		if (cmd) {
-			char *res = r_core_cmd_str (core, cmd);
+		char *rcmd = calloc (1, cmd_len + 1);
+		if (rcmd) {
+			r_socket_read (fh, (ut8*)rcmd, cmd_len);
+			char *res = r_core_cmd_str (core, rcmd);
 			if (res) {
 				int res_len = strlen (res) + 1;
 				ut8 *pkt = r_rap_packet ((RAP_RMT_CMD | RAP_RMT_REPLY), res_len);
@@ -1293,6 +1332,7 @@ R_API void r_core_rtr_cmd(RCore *core, const char *input) {
 				free (res);
 				free (pkt);
 			}
+			free (rcmd);
 		}
 		/* read response */
 		r_socket_read (fh, (ut8*)bufr, 5);
@@ -1370,20 +1410,26 @@ R_API int r_core_rtr_cmds (RCore *core, const char *port) {
 
 	eprintf ("Listening for commands on port %s\n", port);
 	listenport = port;
+	r_cons_break_push ((RConsBreak)r_core_rtr_http_stop, core);
 	for (;;) {
-		r_cons_break ((RConsBreak)r_core_rtr_http_stop, core);
+		if (r_cons_is_breaked ()) {
+			break;
+		}
 		ch = r_socket_accept (s);
 		buf[0] = 0;
 		ret = r_socket_read (ch, buf, sizeof (buf) - 1);
 		if (ret > 0) {
 			buf[ret] = 0;
 			for (i = 0; buf[i]; i++) {
-				if (buf[i] == '\n')
-					buf[i] = buf[i+1]? ';': '\0';
+				if (buf[i] == '\n') {
+					buf[i] = buf[i + 1]? ';': '\0';
+				}
 			}
-			if (!r_config_get_i (core->config, "scr.prompt") \
-					&& !strcmp ((char*)buf, "q!"))
+			if (!r_config_get_i (core->config, "scr.prompt") &&
+			    !strcmp ((char *)buf, "q!")) {
+				r_socket_close (ch);
 				break;
+			}
 			str = r_core_cmd_str (core, (const char *)buf);
 			if (str && *str)  {
 				r_socket_write (ch, str, strlen (str));
@@ -1392,12 +1438,10 @@ R_API int r_core_rtr_cmds (RCore *core, const char *port) {
 			}
 			free (str);
 		}
-		if (r_cons_singleton()->breaked)
-			break;
 		r_socket_close (ch);
-		r_socket_free (ch);
-		r_cons_break_end ();
+		ch = NULL;
 	}
+	r_cons_break_pop ();
 	r_socket_free (s);
 	r_socket_free (ch);
 	return 0;
