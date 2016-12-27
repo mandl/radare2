@@ -2200,14 +2200,14 @@ R_API void fcn_callconv(RCore *core, RAnalFunction *fcn) {
 			bb_size = bb->size;
 		}
 		if (r_io_read_at (core->io, bb->addr, buf, bb->size) != bb->size) {
-			eprintf ("read error\n");
+	//		eprintf ("read error\n");
 			break;
 		}
 		pos = bb->addr;
 		while (pos < bb->addr + bb->size) {
 			op = r_core_anal_op (core, pos);
 			if (!op) {
-				eprintf ("Cannot get op\n");
+	//			eprintf ("Cannot get op\n");
 				break;
 			}
 			fill_args (core->anal, fcn, op);
@@ -2338,7 +2338,10 @@ R_API int r_core_anal_graph(RCore *core, ut64 addr, int opts) {
 static int core_anal_followptr(RCore *core, int type, ut64 at, ut64 ptr, ut64 ref, int code, int depth) {
 	ut64 dataptr;
 	int wordsize;
-
+// SLOW Operation try to reduce as much as possible -- eprintf ("READ %d %llx\n", wordsize, ptr);
+	if (!ptr) {
+		return false;
+	}
 	if (ptr == ref) {
 		if (code) {
 			r_anal_ref_add (core->anal, ref, at, type? type: 'c');
@@ -2458,6 +2461,7 @@ R_API int r_core_anal_search(RCore *core, ut64 from, ut64 to, ut64 ref) {
 					}
 					break;
 				}
+				i += op.size - 1;
 			}
 			if (bckwrds) {
 				if (!do_bckwrd_srch) {

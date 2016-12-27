@@ -114,6 +114,7 @@ typedef struct Opcode_t {
 	size_t op_len;
 	bool is_short;
 	ut8 opcode[3];
+	int operands_count;
 	Operand operands[2];
 } Opcode;
 
@@ -122,6 +123,16 @@ static ut8 getsib(const ut8 sib) {
 		return 0;
 	}
 	return (sib & 0x8) ? 3 : getsib ((sib << 1) | 1) - 1;
+}
+
+static int is_al_reg(const Operand op) {
+	if (op.type & OT_MEMORY) {
+		return 0;
+	}
+	if (op.reg == X86R_AL && op.type & OT_BYTE) {
+		return 1;
+	}
+	return 0;
 }
 
 static int process_group_1(RAsm *a, ut8 *data, const Opcode op) {
@@ -133,8 +144,9 @@ static int process_group_1(RAsm *a, ut8 *data, const Opcode op) {
 	if (!op.operands[1].is_good_flag) {
 		return -1;
 	}
-	if (a->bits == 64 && op.operands[0].type & OT_QWORD) data[l++] = 0x48;
-
+	if (a->bits == 64 && op.operands[0].type & OT_QWORD) {
+		data[l++] = 0x48;
+	}
 	if (!strcmp (op.mnemonic, "adc")) {
 		modrm = 2;
 	} else if (!strcmp (op.mnemonic, "add")) {
@@ -273,6 +285,13 @@ static int process_1byte_op(RAsm *a, ut8 *data, const Opcode op, int op1) {
 	if (!op.operands[1].is_good_flag) {
 		return -1;
 	}
+
+	if (op.operands[0].reg == X86R_AL && op.operands[1].type & OT_CONSTANT) {
+		data[l++] = op1 + 4;
+		data[l++] = op.operands[1].immediate * op.operands[1].sign;
+		return l;
+	}
+
 	if (a->bits == 64 &&
 		((op.operands[0].type & OT_QWORD) |
 		 (op.operands[1].type & OT_QWORD))) {
@@ -373,56 +392,67 @@ static int process_1byte_op(RAsm *a, ut8 *data, const Opcode op, int op1) {
 }
 
 static int opadc(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x10);
 }
 
 static int opadd(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x00);
 }
 
 static int opand(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x20);
 }
 
 static int opcmp(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x38);
 }
 
 static int opsub(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x28);
 }
 
 static int opor(RAsm *a, ut8 * data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x08);
 }
 
 static int opxor(RAsm *a, ut8 * data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands_count < 2) {
+		return -1;
+	}
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x30);
 }
 
 static int opsbb(RAsm *a, ut8 *data, const Opcode op) {
-	if (op.operands[1].type & OT_CONSTANT) {
+	if (op.operands[1].type & OT_CONSTANT &&
+	    !is_al_reg (op.operands[0])) {
 		return process_group_1 (a, data, op);
 	}
 	return process_1byte_op (a, data, op, 0x18);
@@ -815,7 +845,7 @@ static int opjc(RAsm *a, ut8 *data, const Opcode op) {
 		}
 		return l;
 	}
-	
+
 	if (!op.is_short) {data[l++] = 0x0f;}
 	if (!strcmp (op.mnemonic, "ja") ||
 		!strcmp (op.mnemonic, "jnbe")) {
@@ -2165,22 +2195,24 @@ static int parseOpcode(RAsm *a, const char *op, Opcode *out) {
 	out->operands[0].sign = out->operands[1].sign = 1;
 	out->operands[0].is_good_flag = out->operands[1].is_good_flag = true;
 	out->is_short = false;
+	out->operands_count = 0;
 	if (args) {
 		args++;
 	} else {
 		return 1;
 	}
-
 	if (!strncasecmp (args, "short", 5)) {
 		out->is_short = true;
 		args += 5;
 	}
-
 	parseOperand (a, args, &(out->operands[0]));
 	args = strchr (args, ',');
 	if (args) {
 		args++;
 		parseOperand (a, args, &(out->operands[1]));
+		out->operands_count = 2;
+	} else {
+		out->operands_count = 1;
 	}
 	return 0;
 }
